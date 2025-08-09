@@ -13,25 +13,46 @@ def reverse_lookup(points, method, is_parent):
     if points <= 0:
         return {'rank': '不要', 'points': 0}
 
-    # Mangan and higher first
+    # 満貫以上（跳満・倍満等も）はrankで明示
     if method == 'ron':
         if (not is_parent) and points >= CHILD_RON_MANGAN:
-            return {'rank': '満貫', 'points': points}
+            if points >= 12000:
+                return {'rank': '跳満', 'points': points}
+            elif points >= 11600:
+                return {'rank': '満貫', 'points': points}
+            else:
+                return {'rank': '満貫', 'points': points}
         if is_parent and points >= PARENT_RON_MANGAN:
-            return {'rank': '満貫', 'points': points}
+            if points >= 18000:
+                return {'rank': '倍満', 'points': points}
+            elif points >= 12000:
+                return {'rank': '跳満', 'points': points}
+            elif points >= 11600:
+                return {'rank': '満貫', 'points': points}
+            else:
+                return {'rank': '満貫', 'points': points}
     else:
         if is_parent and points >= PARENT_TSUMO_MANGAN:
-            return {'rank': '満貫', 'points': f"{points}オール"}
+            if points >= 6000:
+                return {'rank': '倍満', 'points': f"{points}オール"}
+            elif points >= 4000:
+                return {'rank': '満貫', 'points': f"{points}オール"}
         if (not is_parent) and points >= CHILD_TSUMO_MANGAN:
             parent_pay = points * 2
-            return {'rank': '満貫', 'points': f"{points}-{parent_pay}"}
+            if points >= 3000:
+                return {'rank': '倍満', 'points': f"{points}-{parent_pay}"}
+            elif points >= 2000:
+                return {'rank': '満貫', 'points': f"{points}-{parent_pay}"}
 
     role = 'parent' if is_parent else 'child'
     table = POINTS_TABLE[role][method]
 
+    # 満貫未満は50符以下のみ、翻数制限
     candidates = []
     for (fu, han), val in table.items():
         if fu > 50:
+            continue
+        if han > 4:
             continue
         if method == 'ron':
             if val >= points:
