@@ -1,53 +1,39 @@
-from points_lookup import reverse_lookup
-import math
+from points_table import POINTS_TABLE
 
-def calculate_conditions(scores, oya, tsumibo, kyotaku):
-    me = "自分"
-    diff_target = max([s for p, s in scores.items() if p != me]) - scores[me]
-    if diff_target <= 0:
-        return [{"条件": "全条件", "points": 0, "rank": "不要", "detail": "すでにトップ"}]
+def lookup_points(role, win_type, needed_points):
+    for (fu, han), points in POINTS_TABLE[role][win_type].items():
+        if win_type == 'ron':
+            if points >= needed_points:
+                if (role == 'child' and points >= 7700) or (role == 'parent' and points >= 11600):
+                    return '満貫'
+                return f"{fu}符{han}翻"
+        else:
+            pay_parent, pay_child = points
+            if role == 'child':
+                total = pay_parent + 2 * pay_child
+            else:
+                total = pay_parent * 3
+            if total >= needed_points:
+                if (role == 'child' and total >= 8000) or (role == 'parent' and total >= 12000):
+                    return '満貫'
+                return f"{fu}符{han}翻"
+    return '不可能'
 
-    diff_target -= kyotaku * 1000
-    tsumibo_points = tsumibo * 300
-    is_parent = (me == oya)
-    results = []
+def calculate_conditions(scores, dealer, tsumi, kyotaku):
+    names = ["自分", "下家", "対面", "上家"]
+    my_idx = 0
+    top_idx = max(range(4), key=lambda i: scores[i])
+    role = 'parent' if dealer == my_idx else 'child'
+    diff = scores[top_idx] - scores[my_idx] + 1
 
-    # 直撃ロン
-    ron_points_direct = diff_target + 100
-    ron_points_direct -= tsumibo_points
-    ron_points_direct = math.ceil(ron_points_direct / 100) * 100
-    rank_str, _ = reverse_lookup(ron_points_direct, "ron", is_parent)
-    results.append({
-        "条件": "直撃ロン",
-        "points": ron_points_direct,
-        "rank": rank_str,
-        "detail": f"点差{diff_target} + 積み棒{tsumibo_points}"
-    })
+    diff -= tsumi * 300 + kyotaku * 1000
 
-    # 他家放銃ロン
-    ron_points_other = diff_target + 100
-    ron_points_other -= tsumibo_points
-    ron_points_other = math.ceil(ron_points_other / 100) * 100
-    rank_str, _ = reverse_lookup(ron_points_other, "ron", is_parent)
-    results.append({
-        "条件": "他家放銃ロン",
-        "points": ron_points_other,
-        "rank": rank_str,
-        "detail": f"点差{diff_target} + 積み棒{tsumibo_points}"
-    })
+    ron_direct = diff
+    ron_other = diff
+    tsumo_needed = diff
 
-    # ツモ
-    if is_parent:
-        tsumo_payment = (diff_target + 100 - tsumibo_points) / 3
-    else:
-        tsumo_payment = (diff_target + 100 - tsumibo_points) / 4
-    tsumo_payment = math.ceil(tsumo_payment / 100) * 100
-    rank_str, _ = reverse_lookup(tsumo_payment, "tsumo", is_parent)
-    results.append({
-        "条件": "ツモ",
-        "points": tsumo_payment,
-        "rank": rank_str,
-        "detail": f"点差{diff_target} + 積み棒{tsumibo_points}"
-    })
-
-    return results
+    return {
+        "直撃ロン": lookup_points(role, 'ron', ron_direct),
+        "他家放銃ロン": lookup_points(role, 'ron', ron_other),
+        "ツモ": lookup_points(role, 'tsumo', tsumo_needed)
+    }
