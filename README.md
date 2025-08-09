@@ -1,5 +1,3 @@
-TOPる - 麻雀オーラス逆転条件計算ツール (簡易版)
+TOPる - 麻雀オーラス逆転条件計算ツール (v4)
 
-Run:
-    pip install -r requirements.txt
-    streamlit run app.py
+Run:\n    pip install -r requirements.txt\n    streamlit run app.py
