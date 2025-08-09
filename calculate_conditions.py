@@ -75,4 +75,3 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     return {'top_diff': top_diff, 'leader': leader, 'results': results}
 ```
 
-上記内容で `calculate_conditions.py` を push してください。
