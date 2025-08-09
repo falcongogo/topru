@@ -1,3 +1,4 @@
+```python name=calculate_conditions.py
 from points_lookup import reverse_lookup, ceil100
 import math
 
@@ -15,6 +16,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     tsumibo_points = tsumibo * 300
 
     is_parent = (oya == me)
+    role_str = "親" if is_parent else "子"
 
     results = []
 
@@ -24,7 +26,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     need_direct = ceil100(need_direct)
     rev_direct = reverse_lookup(need_direct, 'ron', is_parent)
     results.append({
-        '条件': f'直撃ロン（{leader}）',
+        '条件': f'直撃ロン（{leader}）（{role_str}）',
         'need_points': need_direct,
         'rank': rev_direct['rank'],
         'display': rev_direct['points'],
@@ -37,7 +39,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     need_other = ceil100(need_other)
     rev_other = reverse_lookup(need_other, 'ron', is_parent)
     results.append({
-        '条件': '他家放銃ロン',
+        '条件': f'他家放銃ロン（{role_str}）',
         'need_points': need_other,
         'rank': rev_other['rank'],
         'display': rev_other['points'],
@@ -52,7 +54,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         per = ceil100(per)
         rev_t = reverse_lookup(per, 'tsumo', True)
         results.append({
-            '条件': 'ツモ（親）',
+            '条件': f'ツモ（{role_str}）',
             'need_points': per,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
@@ -63,7 +65,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         x = ceil100(x)
         rev_t = reverse_lookup(x, 'tsumo', False)
         results.append({
-            '条件': 'ツモ（子）',
+            '条件': f'ツモ（{role_str}）',
             'need_points': x,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
@@ -71,3 +73,6 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         })
 
     return {'top_diff': top_diff, 'leader': leader, 'results': results}
+```
+
+上記内容で `calculate_conditions.py` を push してください。
