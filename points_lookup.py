@@ -54,6 +54,8 @@ def reverse_lookup(points, method, is_parent):
             continue
         if han > 4:
             continue
+        if method == 'ron' and fu == 20:
+            continue  # ロンで20符は不可
         if method == 'ron':
             if val >= points:
                 candidates.append((han, fu, val))
