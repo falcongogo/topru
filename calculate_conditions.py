@@ -1,4 +1,3 @@
-```python name=calculate_conditions.py
 from points_lookup import reverse_lookup, ceil100
 import math
 
@@ -73,5 +72,3 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         })
 
     return {'top_diff': top_diff, 'leader': leader, 'results': results}
-```
-
