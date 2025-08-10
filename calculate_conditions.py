@@ -12,7 +12,8 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     top_diff = leader_score - my_score + 1
 
     kyotaku_points = kyotaku * 1000
-    tsumibo_points = tsumibo * 300
+    tsumibo_points = tsumibo * 300 * 2
+    tsumo_tsumibo_points = tsumibo * 400
 
     is_parent = (oya == me)
     role_str = "親" if is_parent else "子"
@@ -20,8 +21,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     results = []
 
     # Direct Ron (from leader) - 直撃時は点差を半分に
-    need_direct = math.ceil(top_diff / 2)
-    need_direct = max(0, need_direct - kyotaku_points - tsumibo_points)
+    need_direct = top_diff - kyotaku_points - tsumibo_points
+    need_direct = max(0, need_direct)
+    need_direct = need_direct / 2
     need_direct = ceil100(need_direct)
     rev_direct = reverse_lookup(need_direct, 'ron', is_parent)
     results.append({
@@ -46,7 +48,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     })
 
     # Tsumo
-    total_needed = top_diff - kyotaku_points - tsumibo_points
+    total_needed = top_diff - kyotaku_points - tsumo_tsumibo_points
     total_needed = max(0, total_needed)
     if is_parent:
         # 親ツモ：3人から同じ点数をもらう

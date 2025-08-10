@@ -1,8 +1,8 @@
 from points_table import POINTS_TABLE
 import math
 
-CHILD_RON_MANGAN = 7700
-PARENT_RON_MANGAN = 11600
+CHILD_RON_MANGAN = 8000
+PARENT_RON_MANGAN = 12000
 PARENT_TSUMO_MANGAN = 4000
 CHILD_TSUMO_MANGAN = 2000
 
@@ -16,31 +16,49 @@ def reverse_lookup(points, method, is_parent):
     # 満貫以上（跳満・倍満等も）はrankで明示
     if method == 'ron':
         if (not is_parent) and points >= CHILD_RON_MANGAN:
-            if points >= 12000:
-                return {'rank': '跳満', 'points': points}
-            elif points >= 11600:
-                return {'rank': '満貫', 'points': points}
-            else:
-                return {'rank': '満貫', 'points': points}
-        if is_parent and points >= PARENT_RON_MANGAN:
-            if points >= 18000:
+            if points >= 32000:
+                return {'rank': '役満', 'points': points}
+            elif points >= 24000:
+                return {'rank': '三倍満', 'points': points}
+            elif points >= 16000:
                 return {'rank': '倍満', 'points': points}
             elif points >= 12000:
                 return {'rank': '跳満', 'points': points}
-            elif points >= 11600:
+            else:
                 return {'rank': '満貫', 'points': points}
+        if is_parent and points >= PARENT_RON_MANGAN:
+            if points >= 48000:
+                return {'rank': '役満', 'points': points}
+            elif points >= 36000:
+                return {'rank': '三倍満', 'points': points}
+            elif points >= 24000:
+                return {'rank': '倍満', 'points': points}
+            elif points >= 18000:
+                return {'rank': '跳満', 'points': points}
             else:
                 return {'rank': '満貫', 'points': points}
     else:
         if is_parent and points >= PARENT_TSUMO_MANGAN:
-            if points >= 6000:
+            if points >= 16000:
+                return {'rank': '役満', 'points': f"{points}オール"}
+            elif points >= 12000:
+                return {'rank': '三倍満', 'points': f"{points}オール"}
+            elif points >= 8000:
                 return {'rank': '倍満', 'points': f"{points}オール"}
+            elif points >= 6000:
+                return {'rank': '跳満', 'points': f"{points}オール"}
             elif points >= 4000:
                 return {'rank': '満貫', 'points': f"{points}オール"}
         if (not is_parent) and points >= CHILD_TSUMO_MANGAN:
             parent_pay = points * 2
-            if points >= 3000:
+            if points >= 8000:
+                return {'rank': '役満', 'points': f"{points}-{parent_pay}"}
+            elif points >= 6000:
+                return {'rank': '三倍満', 'points': f"{points}-{parent_pay}"}
+            elif points >= 4000:
                 return {'rank': '倍満', 'points': f"{points}-{parent_pay}"}
+            elif points >= 3000:
+                return {'rank': '跳満', 'points': f"{points}-{parent_pay}"}
             elif points >= 2000:
                 return {'rank': '満貫', 'points': f"{points}-{parent_pay}"}
 
