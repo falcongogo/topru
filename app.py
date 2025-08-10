@@ -132,9 +132,6 @@ def main():
     tsumibo = st.number_input('積み棒本数', min_value=0, step=1, value=st.session_state.tsumibo)
     kyotaku = st.number_input('供託棒本数', min_value=0, step=1, value=st.session_state.kyotaku)
     
-    # 計算結果表示エリアのコンテナを作成
-    results_container = st.container()
-    
     # 計算ボタン
     if st.button('計算', type='primary'):
         # 入力値の検証
@@ -153,27 +150,16 @@ def main():
             top_diff = data['top_diff']
             leader = data['leader']
             
-            # 計算結果エリアに移動するためのアンカー
-            st.markdown('<div id="results"></div>', unsafe_allow_html=True)
+            # トップとの差を表示
+            display_top_difference(top_diff, leader)
             
-            with results_container:
-                # トップとの差を表示
-                display_top_difference(top_diff, leader)
-                
-                # 逆転条件を表示
-                st.subheader('逆転条件（直撃ロン / 他家放銃ロン / ツモ）')
-                cols = st.columns(3)
-                
-                for i, result in enumerate(data['results']):
-                    with cols[i]:
-                        render_condition_card(result)
+            # 逆転条件を表示
+            st.subheader('逆転条件（直撃ロン / 他家放銃ロン / ツモ）')
+            cols = st.columns(3)
             
-            # 計算結果に自動スクロール
-            st.markdown("""
-            <script>
-                document.getElementById('results').scrollIntoView({behavior: 'smooth'});
-            </script>
-            """, unsafe_allow_html=True)
+            for i, result in enumerate(data['results']):
+                with cols[i]:
+                    render_condition_card(result)
                     
         except Exception as e:
             st.error(f"計算エラーが発生しました: {str(e)}")
