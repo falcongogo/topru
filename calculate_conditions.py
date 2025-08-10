@@ -49,23 +49,26 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     total_needed = top_diff - kyotaku_points - tsumibo_points
     total_needed = max(0, total_needed)
     if is_parent:
-        per = math.ceil(total_needed / 3.0)
-        per = ceil100(per)
-        rev_t = reverse_lookup(per, 'tsumo', True)
+        # 親ツモ：3人から同じ点数をもらう
+        per_person = math.ceil(total_needed / 3.0)
+        per_person = ceil100(per_person)
+        rev_t = reverse_lookup(per_person, 'tsumo', True)
         results.append({
             '条件': f'ツモ（{role_str}）',
-            'need_points': per,
+            'need_points': per_person,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
             'is_direct': False
         })
     else:
-        x = math.ceil(total_needed / 4.0)
-        x = ceil100(x)
-        rev_t = reverse_lookup(x, 'tsumo', False)
+        # 子ツモ：親から2倍、子から1倍の点数をもらう
+        # 親2人 + 子1人 = 合計3人から点数をもらう
+        per_child = math.ceil(total_needed / 3.0)
+        per_child = ceil100(per_child)
+        rev_t = reverse_lookup(per_child, 'tsumo', False)
         results.append({
             '条件': f'ツモ（{role_str}）',
-            'need_points': x,
+            'need_points': per_child,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
             'is_direct': False

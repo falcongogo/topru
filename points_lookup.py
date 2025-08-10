@@ -65,7 +65,9 @@ def reverse_lookup(points, method, is_parent):
                     candidates.append((han, fu, val))
             else:
                 child_pay, parent_pay = val
-                if child_pay >= points and parent_pay >= points * 2:
+                # 子ツモ：親から2倍、子から1倍の点数をもらう
+                # 必要な点数は子の支払い額以上で、親の支払い額は子の支払い額の2倍以上
+                if child_pay >= points:
                     candidates.append((han, fu, val))
 
     if candidates:
