@@ -20,17 +20,30 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
 
     results = []
 
-    # Direct Ron (from leader) - 直撃時は点差を半分に
+    # Direct Ron (from leader) - 直撃時は点差を倍縮まる（半分ではなく）
     need_direct = top_diff - kyotaku_points - tsumibo_points
     need_direct = max(0, need_direct)
+    # 直撃時は点差が倍縮まる = 必要な点数が半分になる
     need_direct = need_direct / 2
     need_direct = ceil100(need_direct)
     rev_direct = reverse_lookup(need_direct, 'ron', is_parent)
+    
+    # 直撃時の合計点数と相手のマイナス点数を計算
+    if isinstance(rev_direct['points'], int):
+        total_points = rev_direct['points']
+        opponent_loss = rev_direct['points']
+    else:
+        # 点数が文字列の場合は数値に変換
+        total_points = rev_direct['points']
+        opponent_loss = rev_direct['points']
+    
     results.append({
         '条件': f'直撃ロン（{leader}）（{role_str}）',
         'need_points': need_direct,
         'rank': rev_direct['rank'],
         'display': rev_direct['points'],
+        'total_points': total_points,
+        'opponent_loss': opponent_loss,
         'is_direct': True
     })
 
@@ -39,27 +52,51 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     need_other = max(0, need_other)
     need_other = ceil100(need_other)
     rev_other = reverse_lookup(need_other, 'ron', is_parent)
+    
+    # 他家放銃時の合計点数と相手のマイナス点数
+    if isinstance(rev_other['points'], int):
+        total_points = rev_other['points']
+        opponent_loss = rev_other['points']
+    else:
+        total_points = rev_other['points']
+        opponent_loss = rev_other['points']
+    
     results.append({
         '条件': f'他家放銃ロン（{role_str}）',
         'need_points': need_other,
         'rank': rev_other['rank'],
         'display': rev_other['points'],
+        'total_points': total_points,
+        'opponent_loss': opponent_loss,
         'is_direct': False
     })
 
     # Tsumo
     total_needed = top_diff - kyotaku_points - tsumo_tsumibo_points
     total_needed = max(0, total_needed)
+    
     if is_parent:
         # 親ツモ：子3人から1倍ずつ = 合計3倍
         per_person = math.ceil(total_needed / 3.0)
         per_person = ceil100(per_person)
         rev_t = reverse_lookup(per_person, 'tsumo', True)
+        
+        # 親ツモの合計点数と相手のマイナス点数
+        if isinstance(rev_t['points'], str) and 'オール' in rev_t['points']:
+            # "4000オール" のような形式
+            total_points = int(rev_t['points'].replace('オール', '')) * 3
+            opponent_loss = int(rev_t['points'].replace('オール', ''))
+        else:
+            total_points = rev_t['points'] * 3
+            opponent_loss = rev_t['points']
+        
         results.append({
             '条件': f'ツモ（{role_str}）',
             'need_points': per_person,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
+            'total_points': total_points,
+            'opponent_loss': opponent_loss,
             'is_direct': False
         })
     else:
@@ -69,11 +106,24 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         child_payment = ceil100(child_payment)
         
         rev_t = reverse_lookup(child_payment, 'tsumo', False)
+        
+        # 子ツモの合計点数と相手のマイナス点数
+        if isinstance(rev_t['points'], str) and '-' in rev_t['points']:
+            # "2000-4000" のような形式
+            child_pay, parent_pay = map(int, rev_t['points'].split('-'))
+            total_points = child_pay * 2 + parent_pay  # 子2人 + 親1人
+            opponent_loss = f"子{child_pay}点×2 + 親{parent_pay}点"
+        else:
+            total_points = rev_t['points'] * 4
+            opponent_loss = rev_t['points']
+        
         results.append({
             '条件': f'ツモ（{role_str}）',
             'need_points': child_payment * 4,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
+            'total_points': total_points,
+            'opponent_loss': opponent_loss,
             'is_direct': False
         })
 

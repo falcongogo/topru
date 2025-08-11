@@ -90,10 +90,19 @@ def render_condition_card(result: Dict[str, Any]) -> None:
     """条件カードの描画"""
     style_config = get_condition_style(result)
     
+    # 合計点数と相手のマイナス点数を表示
+    total_info = ""
+    if 'total_points' in result and 'opponent_loss' in result:
+        if isinstance(result['opponent_loss'], str):
+            total_info = f"<br><small>合計: {result['total_points']}点<br>相手支払い: {result['opponent_loss']}</small>"
+        else:
+            total_info = f"<br><small>合計: {result['total_points']}点<br>相手支払い: {result['opponent_loss']}点</small>"
+    
     st.markdown(f"""
     <div style='background:{style_config["bgcolor"]};padding:12px;border-radius:8px'>
         <span style='font-size:1.3em;{style_config["style"]}'>{style_config["badge"]} {result['条件']}</span><br>
         <span style='font-size:1.1em;{style_config["style"]}'>{result['rank']}（{result['display']}）</span>
+        {total_info}
     </div>
     """, unsafe_allow_html=True)
 
