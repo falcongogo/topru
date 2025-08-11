@@ -11,226 +11,56 @@ def ceil100(x):
 
 def reverse_lookup(points, method, is_parent):
     if points <= 0:
-        return {'rank': '不要', 'points': 0, 'calculation_details': {'reason': '必要点数が0点以下'}}
+        return {'rank': '不要', 'points': 0}
 
     # 満貫以上（跳満・倍満等も）はrankで明示
     if method == 'ron':
         if (not is_parent) and points >= CHILD_RON_MANGAN:
             if points >= 32000:
-                return {
-                    'rank': '役満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '役満',
-                        'reason': f'子ロンで{points}点以上',
-                        'min_points': 32000
-                    }
-                }
+                return {'rank': '役満', 'points': points}
             elif points >= 24000:
-                return {
-                    'rank': '三倍満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '三倍満',
-                        'reason': f'子ロンで{points}点以上',
-                        'min_points': 24000
-                    }
-                }
+                return {'rank': '三倍満', 'points': points}
             elif points >= 16000:
-                return {
-                    'rank': '倍満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '倍満',
-                        'reason': f'子ロンで{points}点以上',
-                        'min_points': 16000
-                    }
-                }
+                return {'rank': '倍満', 'points': points}
             elif points >= 12000:
-                return {
-                    'rank': '跳満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '跳満',
-                        'reason': f'子ロンで{points}点以上',
-                        'min_points': 12000
-                    }
-                }
+                return {'rank': '跳満', 'points': points}
             else:
-                return {
-                    'rank': '満貫', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '満貫',
-                        'reason': f'子ロンで{points}点以上',
-                        'min_points': 8000
-                    }
-                }
+                return {'rank': '満貫', 'points': points}
         if is_parent and points >= PARENT_RON_MANGAN:
             if points >= 48000:
-                return {
-                    'rank': '役満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '役満',
-                        'reason': f'親ロンで{points}点以上',
-                        'min_points': 48000
-                    }
-                }
+                return {'rank': '役満', 'points': points}
             elif points >= 36000:
-                return {
-                    'rank': '三倍満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '三倍満',
-                        'reason': f'親ロンで{points}点以上',
-                        'min_points': 36000
-                    }
-                }
+                return {'rank': '三倍満', 'points': points}
             elif points >= 24000:
-                return {
-                    'rank': '倍満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '倍満',
-                        'reason': f'親ロンで{points}点以上',
-                        'min_points': 24000
-                    }
-                }
+                return {'rank': '倍満', 'points': points}
             elif points >= 18000:
-                return {
-                    'rank': '跳満', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '跳満',
-                        'reason': f'親ロンで{points}点以上',
-                        'min_points': 18000
-                    }
-                }
+                return {'rank': '跳満', 'points': points}
             else:
-                return {
-                    'rank': '満貫', 
-                    'points': points,
-                    'calculation_details': {
-                        'type': '満貫',
-                        'reason': f'親ロンで{points}点以上',
-                        'min_points': 12000
-                    }
-                }
+                return {'rank': '満貫', 'points': points}
     else:
         if is_parent and points >= PARENT_TSUMO_MANGAN:
             if points >= 16000:
-                return {
-                    'rank': '役満', 
-                    'points': f"{points}オール",
-                    'calculation_details': {
-                        'type': '役満',
-                        'reason': f'親ツモで{points}点以上',
-                        'min_points': 16000,
-                        'payment': f'各人{points}点'
-                    }
-                }
+                return {'rank': '役満', 'points': f"{points}オール"}
             elif points >= 12000:
-                return {
-                    'rank': '三倍満', 
-                    'points': f"{points}オール",
-                    'calculation_details': {
-                        'type': '三倍満',
-                        'reason': f'親ツモで{points}点以上',
-                        'min_points': 12000,
-                        'payment': f'各人{points}点'
-                    }
-                }
+                return {'rank': '三倍満', 'points': f"{points}オール"}
             elif points >= 8000:
-                return {
-                    'rank': '倍満', 
-                    'points': f"{points}オール",
-                    'calculation_details': {
-                        'type': '倍満',
-                        'reason': f'親ツモで{points}点以上',
-                        'min_points': 8000,
-                        'payment': f'各人{points}点'
-                    }
-                }
+                return {'rank': '倍満', 'points': f"{points}オール"}
             elif points >= 6000:
-                return {
-                    'rank': '跳満', 
-                    'points': f"{points}オール",
-                    'calculation_details': {
-                        'type': '跳満',
-                        'reason': f'親ツモで{points}点以上',
-                        'min_points': 6000,
-                        'payment': f'各人{points}点'
-                    }
-                }
+                return {'rank': '跳満', 'points': f"{points}オール"}
             elif points >= 4000:
-                return {
-                    'rank': '満貫', 
-                    'points': f"{points}オール",
-                    'calculation_details': {
-                        'type': '満貫',
-                        'reason': f'親ツモで{points}点以上',
-                        'min_points': 4000,
-                        'payment': f'各人{points}点'
-                    }
-                }
+                return {'rank': '満貫', 'points': f"{points}オール"}
         if (not is_parent) and points >= CHILD_TSUMO_MANGAN:
             parent_pay = points * 2
             if points >= 8000:
-                return {
-                    'rank': '役満', 
-                    'points': f"{points}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '役満',
-                        'reason': f'子ツモで{points}点以上',
-                        'min_points': 8000,
-                        'payment': f'子{points}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': '役満', 'points': f"{points}-{parent_pay}"}
             elif points >= 6000:
-                return {
-                    'rank': '三倍満', 
-                    'points': f"{points}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '三倍満',
-                        'reason': f'子ツモで{points}点以上',
-                        'min_points': 6000,
-                        'payment': f'子{points}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': '三倍満', 'points': f"{points}-{parent_pay}"}
             elif points >= 4000:
-                return {
-                    'rank': '倍満', 
-                    'points': f"{points}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '倍満',
-                        'reason': f'子ツモで{points}点以上',
-                        'min_points': 4000,
-                        'payment': f'子{points}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': '倍満', 'points': f"{points}-{parent_pay}"}
             elif points >= 3000:
-                return {
-                    'rank': '跳満', 
-                    'points': f"{points}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '跳満',
-                        'reason': f'子ツモで{points}点以上',
-                        'min_points': 3000,
-                        'payment': f'子{points}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': '跳満', 'points': f"{points}-{parent_pay}"}
             elif points >= 2000:
-                return {
-                    'rank': '満貫', 
-                    'points': f"{points}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '満貫',
-                        'reason': f'子ツモで{points}点以上',
-                        'min_points': 2000,
-                        'payment': f'子{points}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': '満貫', 'points': f"{points}-{parent_pay}"}
 
     role = 'parent' if is_parent else 'child'
     table = POINTS_TABLE[role][method]
@@ -261,52 +91,13 @@ def reverse_lookup(points, method, is_parent):
     if candidates:
         candidates.sort(key=lambda x: (x[0], x[1], x[2] if isinstance(x[2], int) else x[2][0]))
         han, fu, val = candidates[0][0], candidates[0][1], candidates[0][2]
-        
         if method == 'ron':
-            return {
-                'rank': f"{fu}符{han}翻", 
-                'points': val,
-                'calculation_details': {
-                    'type': '通常役',
-                    'fu': fu,
-                    'han': han,
-                    'reason': f'{fu}符{han}翻で{val}点',
-                    'min_points': val
-                }
-            }
+            return {'rank': f"{fu}符{han}翻", 'points': val}
         else:
             if role == 'parent':
-                return {
-                    'rank': f"{fu}符{han}翻", 
-                    'points': f"{val}オール",
-                    'calculation_details': {
-                        'type': '通常役',
-                        'fu': fu,
-                        'han': han,
-                        'reason': f'{fu}符{han}翻で各人{val}点',
-                        'min_points': val,
-                        'payment': f'各人{val}点'
-                    }
-                }
+                return {'rank': f"{fu}符{han}翻", 'points': f"{val}オール"}
             else:
                 child_pay, parent_pay = val
-                return {
-                    'rank': f"{fu}符{han}翻", 
-                    'points': f"{child_pay}-{parent_pay}",
-                    'calculation_details': {
-                        'type': '通常役',
-                        'fu': fu,
-                        'han': han,
-                        'reason': f'{fu}符{han}翻で子{child_pay}点、親{parent_pay}点',
-                        'min_points': child_pay,
-                        'payment': f'子{child_pay}点、親{parent_pay}点'
-                    }
-                }
+                return {'rank': f"{fu}符{han}翻", 'points': f"{child_pay}-{parent_pay}"}
 
-    return {
-        'rank': '不可能', 
-        'points': points,
-        'calculation_details': {
-            'reason': f'必要点数{points}点を満たす役が存在しません'
-        }
-    }
+    return {'rank': '不可能', 'points': points}
