@@ -37,6 +37,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         total_points = rev_direct['points']
         opponent_loss = rev_direct['points']
     
+    # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
+    difference_points = total_points + opponent_loss
+    
     results.append({
         '条件': f'直撃ロン（{leader}）（{role_str}）',
         'need_points': need_direct,
@@ -44,6 +47,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         'display': rev_direct['points'],
         'total_points': total_points,
         'opponent_loss': opponent_loss,
+        'difference_points': difference_points,
         'is_direct': True
     })
 
@@ -61,6 +65,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         total_points = rev_other['points']
         opponent_loss = rev_other['points']
     
+    # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
+    difference_points = total_points + opponent_loss
+    
     results.append({
         '条件': f'他家放銃ロン（{role_str}）',
         'need_points': need_other,
@@ -68,6 +75,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         'display': rev_other['points'],
         'total_points': total_points,
         'opponent_loss': opponent_loss,
+        'difference_points': difference_points,
         'is_direct': False
     })
 
@@ -111,6 +119,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
                 opponent_loss = per_person_actual
                 rev_t = rev_t_higher
         
+        # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
+        difference_points = total_points + opponent_loss
+        
         results.append({
             '条件': f'ツモ（{role_str}）',
             'need_points': total_points,  # 実際に必要な合計点数
@@ -118,6 +129,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             'display': rev_t['points'],
             'total_points': total_points,
             'opponent_loss': opponent_loss,
+            'difference_points': difference_points,
             'is_direct': False
         })
     else:
@@ -157,6 +169,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
                 opponent_loss = rev_t_higher['points']
                 rev_t = rev_t_higher
         
+        # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
+        difference_points = total_points + opponent_loss
+        
         results.append({
             '条件': f'ツモ（{role_str}）',
             'need_points': total_points,  # 実際に必要な合計点数
@@ -164,6 +179,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             'display': rev_t['points'],
             'total_points': total_points,
             'opponent_loss': opponent_loss,
+            'difference_points': difference_points,
             'is_direct': False
         })
 
