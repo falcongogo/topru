@@ -38,7 +38,11 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         opponent_loss = rev_direct['points']
     
     # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
-    difference_points = total_points + opponent_loss
+    if isinstance(opponent_loss, str):
+        # 文字列の場合は、合計点数のみを表示
+        difference_points = total_points
+    else:
+        difference_points = total_points + opponent_loss
     
     results.append({
         '条件': f'直撃ロン（{leader}）（{role_str}）',
@@ -66,7 +70,11 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         opponent_loss = rev_other['points']
     
     # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
-    difference_points = total_points + opponent_loss
+    if isinstance(opponent_loss, str):
+        # 文字列の場合は、合計点数のみを表示
+        difference_points = total_points
+    else:
+        difference_points = total_points + opponent_loss
     
     results.append({
         '条件': f'他家放銃ロン（{role_str}）',
@@ -120,7 +128,11 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
                 rev_t = rev_t_higher
         
         # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
-        difference_points = total_points + opponent_loss
+        if isinstance(opponent_loss, str):
+            # 文字列の場合は、合計点数のみを表示
+            difference_points = total_points
+        else:
+            difference_points = total_points + opponent_loss
         
         results.append({
             '条件': f'ツモ（{role_str}）',
@@ -170,7 +182,11 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
                 rev_t = rev_t_higher
         
         # 差分点数を計算（和了時の取得合計点数 + 相手から取得した点数）
-        difference_points = total_points + opponent_loss
+        if isinstance(opponent_loss, str):
+            # 文字列の場合は、合計点数のみを表示
+            difference_points = total_points
+        else:
+            difference_points = total_points + opponent_loss
         
         results.append({
             '条件': f'ツモ（{role_str}）',
