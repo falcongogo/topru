@@ -51,7 +51,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     total_needed = top_diff - kyotaku_points - tsumo_tsumibo_points
     total_needed = max(0, total_needed)
     if is_parent:
-        # 親ツモ：3人から同じ点数をもらう
+        # 親ツモ：子3人から1倍ずつ = 合計3倍
         per_person = math.ceil(total_needed / 3.0)
         per_person = ceil100(per_person)
         rev_t = reverse_lookup(per_person, 'tsumo', True)
@@ -63,14 +63,15 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             'is_direct': False
         })
     else:
-        # 子ツモ：親から2倍、子から1倍の点数をもらう
-        # 親2人 + 子1人 = 合計3人から点数をもらう
-        per_child = math.ceil(total_needed / 3.0)
-        per_child = ceil100(per_child)
-        rev_t = reverse_lookup(per_child, 'tsumo', False)
+        # 子ツモ：親1人から2倍、子2人から1倍ずつ = 合計4倍
+        # 必要な点数を4で割って、子の支払い額を基準に計算
+        child_payment = math.ceil(total_needed / 4.0)
+        child_payment = ceil100(child_payment)
+        
+        rev_t = reverse_lookup(child_payment, 'tsumo', False)
         results.append({
             '条件': f'ツモ（{role_str}）',
-            'need_points': per_child,
+            'need_points': child_payment * 4,
             'rank': rev_t['rank'],
             'display': rev_t['points'],
             'is_direct': False
