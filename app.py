@@ -1,8 +1,16 @@
+"""
+Streamlit-based web application for calculating Mahjong win conditions.
+
+This module provides the user interface for the "TOPる" tool. Users can input
+the scores of four players, the current dealer (oya), bonus sticks (tsumibo),
+and riichi sticks (kyotaku). The application then calculates the necessary
+conditions to win in the final round (All-Last) and displays them.
+"""
 import streamlit as st
 from calculate_conditions import calculate_conditions
 from typing import Dict, Any
 
-# 定数定義
+# --- Constants ---
 PLAYERS = ['自分', '下家', '対面', '上家']
 DEFAULT_SCORES = {'自分': 28000, '下家': 35000, '対面': 30000, '上家': 27000}
 COLOR_THRESHOLDS = {
@@ -11,8 +19,16 @@ COLOR_THRESHOLDS = {
     'green': 0
 }
 
+# --- Functions ---
+
 def initialize_session_state():
-    """セッション状態の初期化"""
+    """
+    Initializes the Streamlit session state with default values.
+
+    If 'scores', 'oya', 'tsumibo', or 'kyotaku' are not already in the
+    session state, this function sets them to default starting values.
+    This ensures the app has a consistent state on first run or reset.
+    """
     if 'scores' not in st.session_state:
         st.session_state.scores = DEFAULT_SCORES
         st.session_state.oya = '下家'
@@ -20,7 +36,18 @@ def initialize_session_state():
         st.session_state.kyotaku = 0
 
 def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
-    """入力値の検証"""
+    """
+    Validates user inputs for scores and sticks.
+
+    Args:
+        scores: A dictionary containing the scores of all four players.
+        tsumibo: The number of bonus sticks.
+        kyotaku: The number of riichi sticks.
+
+    Returns:
+        True if all inputs are valid (non-negative), False otherwise.
+        Displays an error message in the UI if validation fails.
+    """
     if any(score < 0 for score in scores.values()):
         st.error("点数は0以上で入力してください")
         return False
@@ -30,43 +57,38 @@ def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
     return True
 
 def get_condition_style(result: Dict[str, Any]) -> Dict[str, str]:
-    """条件に応じたスタイル設定を取得"""
+    """
+    Determines the UI styling for a result card based on its content.
+
+    Args:
+        result: A dictionary containing the details of a win condition.
+
+    Returns:
+        A dictionary with styling information ('bgcolor', 'badge', 'style').
+    """
     rank = result['rank']
     is_direct = result['is_direct']
     
     if rank == '不可能':
-        return {
-            'bgcolor': '#ffd6d6',
-            'badge': "❌",
-            'style': ''
-        }
+        return {'bgcolor': '#ffd6d6', 'badge': "❌", 'style': ''}
     elif rank.startswith('満貫'):
-        return {
-            'bgcolor': '#ffe566',
-            'badge': "🌟",
-            'style': 'font-weight:700;'
-        }
+        return {'bgcolor': '#ffe566', 'badge': "🌟", 'style': 'font-weight:700;'}
     elif any(x in rank for x in ['跳満', '倍満', '三倍満', '役満']):
-        return {
-            'bgcolor': '#ffd700',
-            'badge': "💎",
-            'style': 'font-weight:700;'
-        }
+        return {'bgcolor': '#ffd700', 'badge': "💎", 'style': 'font-weight:700;'}
     elif is_direct:
-        return {
-            'bgcolor': '#e0f7fa',
-            'badge': "直撃",
-            'style': 'font-weight:700;'
-        }
+        return {'bgcolor': '#e0f7fa', 'badge': "直撃", 'style': 'font-weight:700;'}
     else:
-        return {
-            'bgcolor': '#fff6e6',
-            'badge': "",
-            'style': ''
-        }
+        return {'bgcolor': '#fff6e6', 'badge': "", 'style': ''}
 
 def render_score_inputs() -> Dict[str, int]:
-    """点数入力UIの描画"""
+    """
+    Renders the score input fields for all four players.
+
+    Uses Streamlit's columns to create a neat layout for the input boxes.
+
+    Returns:
+        A dictionary containing the latest scores entered by the user.
+    """
     st.subheader('点数入力（百点単位）')
     cols = st.columns(4)
     scores = {}
@@ -87,10 +109,15 @@ def render_score_inputs() -> Dict[str, int]:
     return scores
 
 def render_condition_card(result: Dict[str, Any]) -> None:
-    """条件カードの描画"""
+    """
+    Renders a single result card for a win condition.
+
+    Args:
+        result: A dictionary containing the details of a win condition,
+                including rank, display points, and styling info.
+    """
     style_config = get_condition_style(result)
     
-    # 合計点数、相手のマイナス点数、差分点数を表示
     total_info = ""
     if 'total_points' in result and 'opponent_loss' in result and 'difference_points' in result:
         if isinstance(result['opponent_loss'], str):
@@ -107,11 +134,18 @@ def render_condition_card(result: Dict[str, Any]) -> None:
     """, unsafe_allow_html=True)
 
 def display_top_difference(top_diff: int, leader: str) -> None:
-    """トップとの差を表示"""
+    """
+    Displays the point difference to the top player.
+
+    The color of the text changes based on how large the difference is.
+
+    Args:
+        top_diff: The point difference to the leader.
+        leader: The name of the player currently in the lead.
+    """
     if top_diff <= 0:
         st.success("あなたは現在トップです！")
     else:
-        # 色の決定
         if top_diff >= COLOR_THRESHOLDS['red']:
             color = 'red'
         elif top_diff >= COLOR_THRESHOLDS['orange']:
@@ -126,50 +160,44 @@ def display_top_difference(top_diff: int, leader: str) -> None:
         """, unsafe_allow_html=True)
 
 def main():
-    """メインアプリケーション"""
+    """
+    The main function to run the Streamlit application.
+
+    Sets up the page configuration, title, and orchestrates the UI rendering,
+    input handling, and calculation logic.
+    """
     st.set_page_config(page_title='TOPる', page_icon='🀄', layout='wide')
     st.title('TOPる – 麻雀オーラス逆転条件計算ツール')
     
-    # セッション状態の初期化
     initialize_session_state()
     
-    # 点数入力
     scores = render_score_inputs()
     
-    # 親・積み棒・供託棒入力
     oya = st.selectbox('親の位置', PLAYERS, index=PLAYERS.index(st.session_state.oya))
     tsumibo = st.number_input('積み棒本数', min_value=0, step=1, value=st.session_state.tsumibo)
     kyotaku = st.number_input('供託棒本数', min_value=0, step=1, value=st.session_state.kyotaku)
     
-    # 計算結果表示エリアのコンテナを作成
     results_container = st.container()
     
-    # 計算ボタン
     if st.button('計算', type='primary'):
-        # 入力値の検証
         if not validate_inputs(scores, tsumibo, kyotaku):
             return
         
-        # セッション状態の更新
         st.session_state.scores = scores
         st.session_state.oya = oya
         st.session_state.tsumibo = tsumibo
         st.session_state.kyotaku = kyotaku
         
         try:
-            # 条件計算
             data = calculate_conditions(scores, oya, tsumibo, kyotaku)
             top_diff = data['top_diff']
             leader = data['leader']
             
-            # 計算結果エリアに移動するためのアンカー
             st.markdown('<div id="results"></div>', unsafe_allow_html=True)
             
             with results_container:
-                # トップとの差を表示
                 display_top_difference(top_diff, leader)
                 
-                # 逆転条件を表示
                 st.subheader('逆転条件（直撃ロン / 他家放銃ロン / ツモ）')
                 cols = st.columns(3)
                 
@@ -177,7 +205,6 @@ def main():
                     with cols[i]:
                         render_condition_card(result)
             
-            # 計算結果に自動スクロール
             st.markdown("""
             <script>
                 document.getElementById('results').scrollIntoView({behavior: 'smooth'});
