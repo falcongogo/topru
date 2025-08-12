@@ -1,14 +1,14 @@
 """
-Reverse point lookup for Mahjong hands.
+麻雀の手役の点数逆引き機能。
 
-This module provides the functionality to find the minimum required hand (in terms
-of fu and han, or by rank for Mangan+) to achieve a certain score. It is the
-core of the "reverse lookup" feature of the application.
+このモジュールは、特定のスコアを達成するために最低限必要な手役（符と翻、
+または満貫以上のランク）を見つける機能を提供します。
+これはアプリケーションの「逆引き」機能の中核です。
 """
 from points_table import POINTS_TABLE
 import math
 
-# --- Constants for Mangan Thresholds ---
+# --- 満貫の閾値に関する定数 ---
 CHILD_RON_MANGAN = 8000
 PARENT_RON_MANGAN = 12000
 PARENT_TSUMO_MANGAN = 4000
@@ -16,42 +16,40 @@ CHILD_TSUMO_MANGAN = 2000
 
 def ceil100(x: float) -> int:
     """
-    Rounds a number up to the nearest 100.
+    数値を最も近い100の倍数に切り上げます。
 
     Args:
-        x: The number to round up.
+        x: 切り上げる数値。
 
     Returns:
-        The input number rounded up to the next multiple of 100.
+        入力された数値を次の100の倍数に切り上げた整数。
     """
     return int(math.ceil(x / 100.0) * 100)
 
 def reverse_lookup(points: int, method: str, is_parent: bool) -> dict:
     """
-    Finds the minimum hand required to achieve a given number of points.
+    指定された点数を達成するために最低限必要な手役を見つけます。
 
-    This function performs a "reverse lookup" to find the smallest hand that
-    is worth at least the target `points`. It first checks for Mangan-level
-    hands and above. If the required points are lower, it searches the
-    `POINTS_TABLE` for the best fu/han combination.
+    この関数は「逆引き」を行い、目標の`points`以上の価値がある最小の手を
+    見つけ出します。まず満貫以上の手をチェックし、必要な点数がそれより低い
+    場合は、`POINTS_TABLE`から最適な符と翻の組み合わせを検索します。
 
     Args:
-        points: The minimum number of points the hand must be worth. For tsumo,
-                this is the payment per player (or per child for child tsumo).
-        method: The winning method, either 'ron' or 'tsumo'.
-        is_parent: True if the player is the dealer (oya), False otherwise.
+        points: 手役が持つべき最低点数。ツモの場合、これはプレイヤー一人あたり
+                （または子のツモの場合は子一人あたり）の支払額です。
+        method: 和了の方法。「ron」または「tsumo」。
+        is_parent: プレイヤーが親である場合はTrue、そうでない場合はFalse。
 
     Returns:
-        A dictionary containing the 'rank' (e.g., "30符4翻", "満貫") and the
-        actual 'points' value or display string for that hand. Returns
-        '不要' (Unnecessary) if points <= 0, or '不可能' (Impossible) if
-        no suitable hand can be found.
+        'rank'（例：「30符4翻」、「満貫」）と、その手の実際の'points'の値または
+        表示文字列を含む辞書。points <= 0の場合は「不要」、適切な手が見つから
+        ない場合は「不可能」を返します。
     """
     if points <= 0:
         return {'rank': '不要', 'points': 0}
 
-    # --- Mangan and above ---
-    # For high-point hands, we return a rank name instead of fu/han.
+    # --- 満貫以上 ---
+    # 高得点の手には、符/翻の代わりにランク名を返す。
     mangan_value = PARENT_RON_MANGAN if is_parent else CHILD_RON_MANGAN
     if method == 'ron' and points >= mangan_value:
         yakuman_val = 48000 if is_parent else 32000
@@ -70,14 +68,14 @@ def reverse_lookup(points: int, method: str, is_parent: bool) -> dict:
         if points >= yakuman_val * 0.375: return {'rank': '跳満', 'points': f"{int(yakuman_val*0.375)}オール" if is_parent else f"{int(yakuman_val*0.375)}-{int(yakuman_val*0.375)*2}"}
         return {'rank': '満貫', 'points': f"{mangan_tsumo_value}オール" if is_parent else f"{mangan_tsumo_value}-{mangan_tsumo_value*2}"}
 
-    # --- Below Mangan ---
-    # Search the points table for the best candidate.
+    # --- 満貫未満 ---
+    # 点数表から最適な候補を検索する。
     role = 'parent' if is_parent else 'child'
     table = POINTS_TABLE[role][method]
 
     candidates = []
     for (fu, han), val in table.items():
-        # Rules: No 20fu ron, only up to 50fu/4han for this table
+        # ルール：ロンで20符はなし、この表では50符/4翻まで
         if fu > 50 or han > 4: continue
         if method == 'ron' and fu == 20: continue
 
@@ -88,7 +86,7 @@ def reverse_lookup(points: int, method: str, is_parent: bool) -> dict:
     if not candidates:
         return {'rank': '不可能', 'points': points}
 
-    # Find the best candidate (lowest han, then lowest fu, then lowest score)
+    # 最適な候補を見つける（翻が最も低く、次に符が低く、次に点数が低い）
     candidates.sort(key=lambda x: (x[0], x[1], x[2] if isinstance(x[2], int) else x[2][0]))
     han, fu, val = candidates[0]
 

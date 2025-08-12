@@ -1,34 +1,32 @@
 """
-Core logic for calculating Mahjong win conditions.
+麻雀の逆転条件を計算するためのコアロジック。
 
-This module is responsible for determining the required points to win in the
-final round of a Mahjong game based on the current scores and table situation.
-It calculates conditions for three primary scenarios: winning by direct ron,
-winning by ron from another player, and winning by tsumo.
+このモジュールは、現在の点数状況に基づいて、麻雀のオーラスで
+逆転するために必要な点数を決定する責務を持ちます。
+直撃ロン、他家からのロン、ツモの3つの主要なシナリオで条件を計算します。
 """
 from points_lookup import reverse_lookup, ceil100
 import math
 
 def calculate_conditions(scores, oya, tsumibo, kyotaku):
     """
-    Calculates the win conditions for the user ('自分').
+    ユーザー（'自分'）の逆転条件を計算します。
 
-    This function computes the necessary hand values to overtake the top player
-    in three different scenarios:
-    1. Direct Ron: Winning by ron from the current leader.
-    2. Other Ron: Winning by ron from a player other than the leader.
-    3. Tsumo: Winning by self-draw (tsumo).
+    この関数は、トップのプレイヤーを追い越すために必要な手役の価値を、
+    以下の3つの異なるシナリオで計算します。
+    1. 直撃ロン: 現在のトップからロン和了する。
+    2. 他家ロン: トップ以外のプレイヤーからロン和了する。
+    3. ツモ: 自力で和了牌を引く（ツモ）。
 
     Args:
-        scores (dict): A dictionary of scores for all four players.
-        oya (str): The name of the player who is the dealer.
-        tsumibo (int): The number of bonus sticks on the table.
-        kyotaku (int): The number of riichi sticks on the table.
+        scores (dict): 4人全員の点数を含む辞書。
+        oya (str): 親であるプレイヤーの名前。
+        tsumibo (int): 積み棒の本数。
+        kyotaku (int): 供託棒の本数。
 
     Returns:
-        dict: A dictionary containing the point difference to the top player
-              ('top_diff'), the name of the leader ('leader'), and a list of
-              result dictionaries ('results'), one for each scenario.
+        dict: トップとの点差（'top_diff'）、トップのプレイヤー名（'leader'）、
+              そして各シナリオの結果辞書のリスト（'results'）を含む辞書。
     """
     me = '自分'
     if me not in scores:
@@ -40,16 +38,16 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     top_diff = leader_score - my_score + 1
 
     kyotaku_points = kyotaku * 1000
-    ron_tsumibo_bonus = tsumibo * 300  # Ron winner gets 300 per stick.
-    tsumo_bonus = tsumibo * 300 # Tsumo winner gets 100 per stick from each player (total 300).
+    ron_tsumibo_bonus = tsumibo * 300  # ロン和了では1本場につき300点。
+    tsumo_bonus = tsumibo * 300 # ツモ和了では各プレイヤーから1本場につき100点（合計300点）。
 
     is_parent = (oya == me)
     role_str = "親" if is_parent else "子"
 
     results = []
 
-    # --- 1. Direct Ron (from leader) ---
-    # The point difference is doubled because the leader pays.
+    # --- 1. 直撃ロン（トップから） ---
+    # トップが支払うため、点差は倍縮まる。
     need_direct = (top_diff - (kyotaku_points + ron_tsumibo_bonus)) / 2
     need_direct = ceil100(need_direct)
     rev_direct = reverse_lookup(need_direct, 'ron', is_parent)
@@ -58,7 +56,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         total_points = rev_direct['points'] + kyotaku_points + ron_tsumibo_bonus
         opponent_loss = rev_direct['points']
         difference_points = rev_direct['points'] * 2
-    else: # Mangan etc.
+    else: # 満貫など
         total_points = rev_direct['points']
         opponent_loss = rev_direct['points']
         difference_points = rev_direct['points']
@@ -74,7 +72,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         'is_direct': True
     })
 
-    # --- 2. Other Ron (from non-leader) ---
+    # --- 2. 他家からのロン（トップ以外から） ---
     need_other = top_diff - (kyotaku_points + ron_tsumibo_bonus)
     need_other = ceil100(need_other)
     rev_other = reverse_lookup(need_other, 'ron', is_parent)
@@ -83,7 +81,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         total_points = rev_other['points'] + kyotaku_points + ron_tsumibo_bonus
         opponent_loss = rev_other['points']
         difference_points = rev_other['points']
-    else: # Mangan etc.
+    else: # 満貫など
         total_points = rev_other['points']
         opponent_loss = rev_other['points']
         difference_points = rev_other['points']
@@ -99,11 +97,11 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         'is_direct': False
     })
 
-    # --- 3. Tsumo ---
+    # --- 3. ツモ ---
     total_needed = top_diff - (kyotaku_points + tsumo_bonus)
     
     if is_parent:
-        # Parent Tsumo: each opponent pays 1/3 of the total value.
+        # 親のツモ: 各相手が総価値の1/3を支払う。
         per_person_needed = ceil100(total_needed / 3.0)
         rev_t = reverse_lookup(per_person_needed, 'tsumo', True)
         
@@ -115,10 +113,10 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             total_points = per_person_actual * 3
             
         opponent_loss = per_person_actual
-        difference_points = total_points + opponent_loss # Approximation
+        difference_points = total_points + opponent_loss # 近似値
     else:
-        # Child Tsumo: parent pays ~2x what other children pay.
-        # Base the lookup on the payment from another child.
+        # 子のツモ: 親は他の子の約2倍を支払う。
+        # 他の子からの支払いに基づいて検索。
         child_payment_needed = ceil100(total_needed / 4.0)
         rev_t = reverse_lookup(child_payment_needed, 'tsumo', False)
 
@@ -132,7 +130,7 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             total_points = child_pay * 2 + parent_pay
             opponent_loss = f"子{child_pay}, 親{parent_pay}"
             
-        difference_points = total_points # Approximation
+        difference_points = total_points # 近似値
 
     total_points_actual = total_points + kyotaku_points + tsumo_bonus
 

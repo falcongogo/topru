@@ -1,16 +1,15 @@
 """
-Streamlit-based web application for calculating Mahjong win conditions.
+麻雀の逆転条件を計算するStreamlitウェブアプリケーション。
 
-This module provides the user interface for the "TOPる" tool. Users can input
-the scores of four players, the current dealer (oya), bonus sticks (tsumibo),
-and riichi sticks (kyotaku). The application then calculates the necessary
-conditions to win in the final round (All-Last) and displays them.
+このモジュールは「TOPる」ツールのユーザーインターフェースを提供します。
+ユーザーは4人のプレイヤーの点数、現在の親、積み棒、供託棒を入力できます。
+アプリケーションは、オーラスでトップになるための必要条件を計算し、表示します。
 """
 import streamlit as st
 from calculate_conditions import calculate_conditions
 from typing import Dict, Any
 
-# --- Constants ---
+# --- 定数 ---
 PLAYERS = ['自分', '下家', '対面', '上家']
 DEFAULT_SCORES = {'自分': 28000, '下家': 35000, '対面': 30000, '上家': 27000}
 COLOR_THRESHOLDS = {
@@ -19,15 +18,15 @@ COLOR_THRESHOLDS = {
     'green': 0
 }
 
-# --- Functions ---
+# --- 関数 ---
 
 def initialize_session_state():
     """
-    Initializes the Streamlit session state with default values.
+    Streamlitのセッション状態をデフォルト値で初期化します。
 
-    If 'scores', 'oya', 'tsumibo', or 'kyotaku' are not already in the
-    session state, this function sets them to default starting values.
-    This ensures the app has a consistent state on first run or reset.
+    'scores', 'oya', 'tsumibo', 'kyotaku' がセッション状態にない場合、
+    この関数はそれらをデフォルトの開始値に設定します。
+    これにより、アプリの初回実行時やリセット時に状態が保証されます。
     """
     if 'scores' not in st.session_state:
         st.session_state.scores = DEFAULT_SCORES
@@ -37,16 +36,16 @@ def initialize_session_state():
 
 def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
     """
-    Validates user inputs for scores and sticks.
+    ユーザーが入力した点数と棒の値が正しいか検証します。
 
     Args:
-        scores: A dictionary containing the scores of all four players.
-        tsumibo: The number of bonus sticks.
-        kyotaku: The number of riichi sticks.
+        scores: 4人全員の点数を含む辞書。
+        tsumibo: 積み棒の本数。
+        kyotaku: 供託棒の本数。
 
     Returns:
-        True if all inputs are valid (non-negative), False otherwise.
-        Displays an error message in the UI if validation fails.
+        全ての入力が有効（非負）であればTrue、そうでなければFalse。
+        検証に失敗した場合はUIにエラーメッセージを表示します。
     """
     if any(score < 0 for score in scores.values()):
         st.error("点数は0以上で入力してください")
@@ -58,13 +57,13 @@ def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
 
 def get_condition_style(result: Dict[str, Any]) -> Dict[str, str]:
     """
-    Determines the UI styling for a result card based on its content.
+    計算結果の内容に基づいて、結果表示カードのUIスタイルを決定します。
 
     Args:
-        result: A dictionary containing the details of a win condition.
+        result: 逆転条件の詳細を含む辞書。
 
     Returns:
-        A dictionary with styling information ('bgcolor', 'badge', 'style').
+        スタイリング情報（'bgcolor', 'badge', 'style'）を含む辞書。
     """
     rank = result['rank']
     is_direct = result['is_direct']
@@ -82,12 +81,12 @@ def get_condition_style(result: Dict[str, Any]) -> Dict[str, str]:
 
 def render_score_inputs() -> Dict[str, int]:
     """
-    Renders the score input fields for all four players.
+    4人全員の点数入力フィールドを描画します。
 
-    Uses Streamlit's columns to create a neat layout for the input boxes.
+    Streamlitのカラム機能を使用して、入力ボックスをきれいに配置します。
 
     Returns:
-        A dictionary containing the latest scores entered by the user.
+        ユーザーが入力した最新の点数を含む辞書。
     """
     st.subheader('点数入力（百点単位）')
     cols = st.columns(4)
@@ -110,11 +109,11 @@ def render_score_inputs() -> Dict[str, int]:
 
 def render_condition_card(result: Dict[str, Any]) -> None:
     """
-    Renders a single result card for a win condition.
+    単一の逆転条件の結果カードを描画します。
 
     Args:
-        result: A dictionary containing the details of a win condition,
-                including rank, display points, and styling info.
+        result: ランク、表示点、スタイリング情報など、
+                逆転条件の詳細を含む辞書。
     """
     style_config = get_condition_style(result)
     
@@ -135,13 +134,13 @@ def render_condition_card(result: Dict[str, Any]) -> None:
 
 def display_top_difference(top_diff: int, leader: str) -> None:
     """
-    Displays the point difference to the top player.
+    トップのプレイヤーとの点数差を表示します。
 
-    The color of the text changes based on how large the difference is.
+    点差の大きさによってテキストの色が変わります。
 
     Args:
-        top_diff: The point difference to the leader.
-        leader: The name of the player currently in the lead.
+        top_diff: トップとの点差。
+        leader: 現在トップのプレイヤー名。
     """
     if top_diff <= 0:
         st.success("あなたは現在トップです！")
@@ -161,10 +160,10 @@ def display_top_difference(top_diff: int, leader: str) -> None:
 
 def main():
     """
-    The main function to run the Streamlit application.
+    Streamlitアプリケーションを実行するメイン関数。
 
-    Sets up the page configuration, title, and orchestrates the UI rendering,
-    input handling, and calculation logic.
+    ページ設定、タイトル設定、UI描画、入力ハンドリング、
+    計算ロジックの呼び出しを統括します。
     """
     st.set_page_config(page_title='TOPる', page_icon='🀄', layout='wide')
     st.title('TOPる – 麻雀オーラス逆転条件計算ツール')
