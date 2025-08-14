@@ -14,7 +14,8 @@ def run_all_tests():
         'test_points_lookup.py',
         'test_calculate_conditions.py',
         'test_app.py',
-        'test_points_table.py'
+        'test_points_table.py',
+        'test_image_processor.py'
     ]
     
     # テストスイートを作成

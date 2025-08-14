@@ -1,6 +1,9 @@
 import streamlit as st
 from calculate_conditions import calculate_conditions
+from image_processor import ScoreImageProcessor
 from typing import Dict, Any
+import tempfile
+import os
 
 # 定数定義
 PLAYERS = ['自分', '下家', '対面', '上家']
@@ -18,6 +21,116 @@ def initialize_session_state():
         st.session_state.oya = '下家'
         st.session_state.tsumibo = 0
         st.session_state.kyotaku = 0
+        st.session_state.image_processor = None
+
+def initialize_image_processor():
+    """画像処理クラスの初期化"""
+    if st.session_state.image_processor is None:
+        try:
+            st.session_state.image_processor = ScoreImageProcessor()
+        except Exception as e:
+            st.error(f"画像処理モジュールの初期化に失敗しました: {str(e)}")
+            return False
+    return True
+
+def process_uploaded_image(uploaded_file) -> Dict[str, int]:
+    """アップロードされた画像を処理して点数を取得"""
+    if not initialize_image_processor():
+        return {}
+    
+    try:
+        # 一時ファイルに保存
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_path = tmp_file.name
+        
+        # 画像処理
+        scores = st.session_state.image_processor.process_score_image(tmp_path)
+        
+        # 一時ファイルを削除
+        os.unlink(tmp_path)
+        
+        return scores
+        
+    except Exception as e:
+        st.error(f"画像処理中にエラーが発生しました: {str(e)}")
+        return {}
+
+def process_uploaded_image_debug(uploaded_file):
+    """アップロードされた画像を処理してデバッグ情報を取得"""
+    if not initialize_image_processor():
+        return None
+    
+    try:
+        # アップロードされたファイルをOpenCV形式に変換
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise ValueError("アップロードされた画像を読み込めませんでした")
+        
+        # デバッグ情報を取得
+        debug_image, regions = st.session_state.image_processor.debug_detection(image)
+        
+        return debug_image, regions
+        
+    except Exception as e:
+        st.error(f"デバッグ処理中にエラーが発生しました: {str(e)}")
+        return None
+
+def render_image_upload_section() -> Dict[str, int]:
+    """画像アップロードセクションの描画"""
+    st.subheader('📷 スリムスコア28S画像から自動入力')
+    
+    uploaded_file = st.file_uploader(
+        "スリムスコア28Sの点数表示画像をアップロードしてください",
+        type=['png', 'jpg', 'jpeg'],
+        help="スマホで撮影したスリムスコア28Sの点数表示画像をアップロードすると、自動的に点数を読み取ります"
+    )
+    
+    scores = {}
+    
+    if uploaded_file is not None:
+        # 画像プレビュー
+        st.image(uploaded_file, caption="アップロードされた画像", use_column_width=True)
+        
+        # デバッグモードの切り替え
+        debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=False)
+        
+        # 画像処理ボタン
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button('🔍 画像から点数を読み取り', type='secondary'):
+                with st.spinner('画像を処理中...'):
+                    scores = process_uploaded_image(uploaded_file)
+                
+                if scores:
+                    st.success(f"点数を読み取りました: {scores}")
+                    # セッション状態に保存
+                    st.session_state.scores = scores
+                else:
+                    st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
+        
+        # デバッグモードの場合、検出結果を可視化
+        if debug_mode and uploaded_file is not None:
+            with col2:
+                if st.button('🔍 検出領域を表示', type='secondary'):
+                    with st.spinner('検出領域を分析中...'):
+                        debug_result = process_uploaded_image_debug(uploaded_file)
+                        
+                        if debug_result:
+                            debug_image, regions = debug_result
+                            st.image(debug_image, caption="検出された領域（緑の枠）", use_column_width=True)
+                            
+                            if regions:
+                                st.info(f"検出された領域数: {len(regions)}")
+                                for i, (x1, y1, x2, y2) in enumerate(regions):
+                                    st.write(f"領域{i+1}: ({x1}, {y1}) - ({x2}, {y2})")
+                            else:
+                                st.warning("検出された領域がありません")
+    
+    return scores
 
 def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
     """入力値の検証"""
@@ -68,12 +181,24 @@ def get_condition_style(result: Dict[str, Any]) -> Dict[str, str]:
 def render_score_inputs() -> Dict[str, int]:
     """点数入力UIの描画"""
     st.subheader('点数入力（百点単位）')
+    
+    # 画像アップロードセクション
+    image_scores = render_image_upload_section()
+    
+    # 手動入力セクション
+    st.markdown("---")
+    st.markdown("**手動入力**")
     cols = st.columns(4)
     scores = {}
     
     for i, player in enumerate(PLAYERS):
         with cols[i]:
-            default = st.session_state.scores[player] // 100
+            # 画像から読み取った点数があれば使用、なければ現在のセッション状態から
+            if image_scores and player in image_scores:
+                default = image_scores[player] // 100
+            else:
+                default = st.session_state.scores[player] // 100
+            
             value = st.number_input(
                 f'{player} の点数', 
                 min_value=0, 
