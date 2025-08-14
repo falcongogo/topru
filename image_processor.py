@@ -65,8 +65,6 @@ class ScoreImageProcessor:
                 area = w * h
                 aspect_ratio = w / h if h > 0 else 0
 
-                print(f"DEBUG: Found quadrilateral - Area: {area / img_area:.4f} (of total), Aspect Ratio: {aspect_ratio:.2f}")
-
                 # スコア表示領域らしいかどうかの条件
                 # 面積: 画像全体の1%～15%
                 # アスペクト比: 2.0～8.0 (横長)
