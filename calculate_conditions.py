@@ -20,21 +20,17 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
     need_for_reverse = top_diff
 
     # 2. Direct Ron (from leader) - 直撃時は点差を倍縮まる
-    need_direct = need_for_reverse / 2  # 直撃時は点差が倍縮まる
-    need_direct = ceil100(need_direct)
-    rev_direct = reverse_lookup(need_direct, 'ron', is_parent)
     
     # 3. 供託棒と積み棒を差し引く
     kyotaku_points = kyotaku * 1000
-    tsumibo_points = tsumibo * 300 * 2  # ロン時の積み棒
+    tsumibo_points = tsumibo * 300  # ロン時の積み棒
     
-    # 実際に必要な点数 = 逆転に必要な点数 - 供託棒 - 積み棒
-    actual_need_direct = need_direct - kyotaku_points - tsumibo_points
+    # 実際に必要な点数 = (逆転に必要な点数 - 供託棒 - 積み棒) / 2
+    actual_need_direct = ceil100((need_for_reverse - kyotaku_points - tsumibo_points) / 2)
     actual_need_direct = max(0, actual_need_direct)
     
     # 必要に応じてより高い点数を検索
-    if actual_need_direct > 0:
-        rev_direct = reverse_lookup(actual_need_direct, 'ron', is_parent)
+    rev_direct = reverse_lookup(actual_need_direct, 'ron', is_parent)
     
     # 直撃時の合計点数と相手のマイナス点数を計算
     if isinstance(rev_direct['points'], (int, float)):
@@ -137,27 +133,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             rev_t = reverse_lookup(actual_need_tsumo, 'tsumo', True)
         
         # 親ツモの合計点数と相手のマイナス点数
-        if isinstance(rev_t['points'], (int, float)):
-            # 数値の場合は3倍（子3人）
-            per_person_actual = int(rev_t['points'])
-            total_points = per_person_actual * 3
-            opponent_loss = per_person_actual
-        elif isinstance(rev_t['points'], str):
-            # 文字列の数値の場合
-            try:
-                points_val = float(rev_t['points'])
-                per_person_actual = int(points_val)
-                total_points = per_person_actual * 3
-                opponent_loss = per_person_actual
-            except ValueError:
-                # 文字列形式の場合はそのまま使用
-                per_person_actual = rev_t['points']
-                total_points = per_person_actual * 3
-                opponent_loss = per_person_actual
-        else:
-            per_person_actual = rev_t['points']
-            total_points = per_person_actual * 3
-            opponent_loss = per_person_actual
+        per_person_actual = rev_t.get('raw_points', 0)
+        total_points = per_person_actual * 3
+        opponent_loss = per_person_actual
         
         # 差分点数を計算
         if isinstance(opponent_loss, str):
@@ -193,23 +171,9 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
             rev_t = reverse_lookup(actual_need_tsumo, 'tsumo', False)
         
         # 子ツモの合計点数と相手のマイナス点数
-        if isinstance(rev_t['points'], (int, float)):
-            # 数値の場合は4倍（子2人 + 親1人×2）
-            total_points = int(rev_t['points'] * 4)
-            opponent_loss = int(rev_t['points'])
-        elif isinstance(rev_t['points'], str):
-            # 文字列の数値の場合
-            try:
-                points_val = float(rev_t['points'])
-                total_points = int(points_val * 4)
-                opponent_loss = int(points_val)
-            except ValueError:
-                # 文字列形式の場合はそのまま使用
-                total_points = rev_t['points'] * 4
-                opponent_loss = rev_t['points']
-        else:
-            total_points = rev_t['points'] * 4
-            opponent_loss = rev_t['points']
+        child_pay, parent_pay = rev_t.get('raw_points', (0, 0))
+        total_points = child_pay * 2 + parent_pay
+        opponent_loss = child_pay
         
         # 差分点数を計算
         if isinstance(opponent_loss, str):
