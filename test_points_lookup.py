@@ -50,23 +50,23 @@ class TestPointsLookup(unittest.TestCase):
         """子のツモの逆引きテスト"""
         result = reverse_lookup(300, 'tsumo', False)
         self.assertEqual(result['rank'], '30符1翻')
-        self.assertEqual(result['points'], '300-500')
-        
+        self.assertEqual(result['display'], '300-500') 
+
         # 満貫ケース
         result = reverse_lookup(2000, 'tsumo', False)
         self.assertEqual(result['rank'], '満貫')
-        self.assertEqual(result['points'], '2000-4000')
-    
+        self.assertEqual(result['display'], '2000-4000') 
+
     def test_reverse_lookup_tsumo_parent(self):
         """親のツモの逆引きテスト"""
         result = reverse_lookup(500, 'tsumo', True)
         self.assertEqual(result['rank'], '30符1翻')
-        self.assertEqual(result['points'], '500オール')
-        
+        self.assertEqual(result['display'], '500オール') 
+
         # 満貫ケース
         result = reverse_lookup(4000, 'tsumo', True)
         self.assertEqual(result['rank'], '満貫')
-        self.assertEqual(result['points'], '4000オール')
+        self.assertEqual(result['display'], '4000オール') 
     
     def test_reverse_lookup_edge_cases(self):
         """エッジケースのテスト"""
