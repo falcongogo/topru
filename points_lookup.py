@@ -39,28 +39,31 @@ def reverse_lookup(points, method, is_parent):
                 return {'rank': '満貫', 'points': points}
     else:
         if is_parent and points >= PARENT_TSUMO_MANGAN:
+            display_val = f"{points}オール"
             if points >= 16000:
-                return {'rank': '役満', 'points': points, 'display': f"{points}オール"}
+                return {'rank': '役満', 'points': display_val, 'display': display_val, 'raw_points': points}
             elif points >= 12000:
-                return {'rank': '三倍満', 'points': points, 'display': f"{points}オール"}
+                return {'rank': '三倍満', 'points': display_val, 'display': display_val, 'raw_points': points}
             elif points >= 8000:
-                return {'rank': '倍満', 'points': points, 'display': f"{points}オール"}
+                return {'rank': '倍満', 'points': display_val, 'display': display_val, 'raw_points': points}
             elif points >= 6000:
-                return {'rank': '跳満', 'points': points, 'display': f"{points}オール"}
+                return {'rank': '跳満', 'points': display_val, 'display': display_val, 'raw_points': points}
             elif points >= 4000:
-                return {'rank': '満貫', 'points': points, 'display': f"{points}オール"}
+                return {'rank': '満貫', 'points': display_val, 'display': display_val, 'raw_points': points}
         if (not is_parent) and points >= CHILD_TSUMO_MANGAN:
             parent_pay = points * 2
+            display_val = f"{points}-{parent_pay}"
+            raw_points = (points, parent_pay)
             if points >= 8000:
-                return {'rank': '役満', 'points': points, 'display': f"{points}-{parent_pay}"}
+                return {'rank': '役満', 'points': display_val, 'display': display_val, 'raw_points': raw_points}
             elif points >= 6000:
-                return {'rank': '三倍満', 'points': points, 'display': f"{points}-{parent_pay}"}
+                return {'rank': '三倍満', 'points': display_val, 'display': display_val, 'raw_points': raw_points}
             elif points >= 4000:
-                return {'rank': '倍満', 'points': points, 'display': f"{points}-{parent_pay}"}
+                return {'rank': '倍満', 'points': display_val, 'display': display_val, 'raw_points': raw_points}
             elif points >= 3000:
-                return {'rank': '跳満', 'points': points, 'display': f"{points}-{parent_pay}"}
+                return {'rank': '跳満', 'points': display_val, 'display': display_val, 'raw_points': raw_points}
             elif points >= 2000:
-                return {'rank': '満貫', 'points': points, 'display': f"{points}-{parent_pay}"}
+                return {'rank': '満貫', 'points': display_val, 'display': display_val, 'raw_points': raw_points}
 
     role = 'parent' if is_parent else 'child'
     table = POINTS_TABLE[role][method]
@@ -95,9 +98,11 @@ def reverse_lookup(points, method, is_parent):
             return {'rank': f"{fu}符{han}翻", 'points': val, 'display': val}
         else:
             if role == 'parent':
-                return {'rank': f"{fu}符{han}翻", 'points': val, 'display': f"{val}オール"}
+                display_val = f"{val}オール"
+                return {'rank': f"{fu}符{han}翻", 'points': display_val, 'display': display_val, 'raw_points': val}
             else:
                 child_pay, parent_pay = val
-                return {'rank': f"{fu}符{han}翻", 'points': child_pay, 'display': f"{child_pay}-{parent_pay}"}
+                display_val = f"{child_pay}-{parent_pay}"
+                return {'rank': f"{fu}符{han}翻", 'points': display_val, 'display': display_val, 'raw_points': val}
 
     return {'rank': '不可能', 'points': points, 'display': points}

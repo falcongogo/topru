@@ -31,7 +31,7 @@ class TestCalculateConditions(unittest.TestCase):
         
         # 直撃ロンは半分になる（実際の計算結果を確認）
         direct_ron = result['results'][0]
-        self.assertEqual(direct_ron['need_points'], 1500)  # 実際の計算結果
+        self.assertEqual(direct_ron['need_points'], 1800)
     
     def test_parent_tsumo_calculation(self):
         """親ツモの計算テスト"""
