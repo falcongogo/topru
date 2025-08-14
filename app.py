@@ -1,11 +1,9 @@
 import streamlit as st
-import numpy as np
 from calculate_conditions import calculate_conditions
 from image_processor import ScoreImageProcessor
 from typing import Dict, Any
 import tempfile
 import os
-import cv2
 
 # 定数定義
 PLAYERS = ['自分', '下家', '対面', '上家']
