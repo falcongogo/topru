@@ -13,15 +13,12 @@ class TestImageProcessor(unittest.TestCase):
         """テスト前の準備"""
         self.processor = ScoreImageProcessor()
         
-        # より現実に近いテスト画像を作成（グレー背景に白いスコア枠）
+        # グレー背景に大きな白いスコア枠を持つテスト画像を作成
         self.test_image = np.full((400, 800, 3), (128, 128, 128), dtype=np.uint8)
+        self.main_frame = (50, 100, 750, 200)  # x1, y1, x2, y2
 
-        self.score_regions = {
-            '自分': (50, 50, 250, 100),
-            '下家': (450, 50, 650, 100),
-            '対面': (50, 250, 250, 300),
-            '上家': (450, 250, 650, 300),
-        }
+        # 白い枠を描画
+        cv2.rectangle(self.test_image, (self.main_frame[0], self.main_frame[1]), (self.main_frame[2], self.main_frame[3]), (255, 255, 255), -1)
 
         self.scores = {
             '自分': 28000,
@@ -30,16 +27,33 @@ class TestImageProcessor(unittest.TestCase):
             '上家': 27000,
         }
         
+        # 4分割された各領域に点数を描画
+        x1, y1, x2, y2 = self.main_frame
+        w = x2 - x1
+        h = y2 - y1
+        region_w = w // 4
+
         font = cv2.FONT_HERSHEY_SIMPLEX
-        for player, (x1, y1, x2, y2) in self.score_regions.items():
-            # 白い枠を描画
-            cv2.rectangle(self.test_image, (x1, y1), (x2, y2), (255, 255, 255), -1)
-            # 黒い文字で点数を描画
+        positions = ['自分', '下家', '対面', '上家']
+        for i, player in enumerate(positions):
             text = str(self.scores[player])
+            region_x_start = x1 + i * region_w
+
             text_size = cv2.getTextSize(text, font, 0.8, 2)[0]
-            text_x = x1 + (x2 - x1 - text_size[0]) // 2
-            text_y = y1 + (y2 - y1 + text_size[1]) // 2
+            text_x = region_x_start + (region_w - text_size[0]) // 2
+            text_y = y1 + (h + text_size[1]) // 2
             cv2.putText(self.test_image, text, (text_x, text_y), font, 0.8, (0, 0, 0), 2)
+
+        # 期待される分割後の領域を計算
+        self.expected_regions = {}
+        for i, player in enumerate(positions):
+            rx1 = x1 + i * region_w
+            ry1 = y1
+            rx2 = x1 + (i + 1) * region_w
+            ry2 = y2
+            if i == 3: # last region
+                rx2 = x2
+            self.expected_regions[player] = (rx1, ry1, rx2, ry2)
 
     def test_initialization(self):
         """初期化テスト"""
@@ -56,24 +70,27 @@ class TestImageProcessor(unittest.TestCase):
     
     def test_extract_score_region(self):
         """点数表示領域の切り出しテスト"""
-        region = self.score_regions['自分']
+        region = self.expected_regions['自分']
         extracted = self.processor.extract_score_region(self.test_image, region)
         self.assertIsNotNone(extracted)
-        self.assertEqual(extracted.shape, (50, 200, 3))
+        h = self.main_frame[3] - self.main_frame[1]
+        w = (self.main_frame[2] - self.main_frame[0]) // 4
+        self.assertEqual(extracted.shape, (h, w, 3))
 
     def test_detect_score_regions(self):
-        """点数表示領域の検出テスト"""
+        """点数表示領域の検出と4分割のテスト"""
         regions = self.processor.detect_score_regions(self.test_image)
         
         self.assertEqual(len(regions), 4)
         
-        # 検出された領域が設定した領域と一致するかチェック
-        detected_regions_sorted = sorted(regions.values(), key=lambda r: (r[1], r[0]))
-        expected_regions_sorted = sorted(self.score_regions.values(), key=lambda r: (r[1], r[0]))
-        
-        for detected, expected in zip(detected_regions_sorted, expected_regions_sorted):
-            self.assertTrue(np.allclose(detected, expected, atol=2),
-                            msg=f"Detected: {detected}, Expected: {expected}")
+        # 検出された領域が期待される領域と一致するかチェック
+        positions = ['自分', '下家', '対面', '上家']
+        for player in positions:
+            self.assertIn(player, regions)
+            detected = regions[player]
+            expected = self.expected_regions[player]
+            self.assertTrue(np.allclose(detected, expected, atol=5),
+                            msg=f"Player {player} - Detected: {detected}, Expected: {expected}")
 
     def test_is_valid_score(self):
         """点数妥当性チェックテスト"""
@@ -108,7 +125,7 @@ class TestImageProcessor(unittest.TestCase):
         mock_image_to_string.return_value = str(self.scores['自分'])
         
         # 「自分」の領域を切り出してテスト
-        region_coords = self.score_regions['自分']
+        region_coords = self.expected_regions['自分']
         region_image = self.processor.extract_score_region(self.test_image, region_coords)
         
         score = self.processor.read_score_from_region(region_image)
