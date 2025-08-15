@@ -34,70 +34,73 @@ class ScoreImageProcessor:
         
         return binary
     
-    def _find_score_rectangles(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """画像からスコア表示と思われる白い長方形の領域を検出する"""
+    def _find_main_score_frame(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+        """画像からスコア表示全体を囲む最も大きな白い長方形の領域を検出する"""
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # 白色の範囲を定義 (低彩度・高明度) - 範囲を広げて検出率を向上
-        lower_white = np.array([0, 0, 150])
-        upper_white = np.array([180, 80, 255])
+        # 白色の範囲を定義 (低彩度・高輝度)
+        lower_white = np.array([0, 0, 180])
+        upper_white = np.array([180, 50, 255])
         
         # マスクを作成
         mask = cv2.inRange(hsv, lower_white, upper_white)
 
+        # 枠線の途切れを補完するための形態学的処理
+        kernel = np.ones((5,5),np.uint8)
+        dilated = cv2.dilate(mask, kernel, iterations = 2)
+        eroded = cv2.erode(dilated, kernel, iterations = 2)
+
         # 輪郭を検出
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
+        if not contours:
+            return None
+
+        # 最も面積の大きい輪郭を見つける
+        main_contour = max(contours, key=cv2.contourArea)
+
+        # 輪郭の外接矩形を取得
+        x, y, w, h = cv2.boundingRect(main_contour)
+
+        # 画像全体の面積に対する割合でフィルタリング
         img_area = image.shape[0] * image.shape[1]
-        candidate_rects = []
+        contour_area = w * h
 
-        for cnt in contours:
-            # 輪郭を多角形で近似
-            epsilon = 0.02 * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
+        # あまりに小さい、または大きすぎる領域は除外
+        if not (img_area * 0.1 < contour_area < img_area * 0.9):
+            print(f"警告: 検出されたメイン領域のサイズが不適切です (画像全体の{contour_area/img_area:.1%})")
+            return None
 
-            # 4つの頂点を持つ輪郭（四角形）のみを対象
-            if len(approx) == 4:
-                x, y, w, h = cv2.boundingRect(cnt)
+        return (x, y, w, h)
 
-                # 面積とアスペクト比でフィルタリング
-                area = w * h
-                aspect_ratio = w / h if h > 0 else 0
-
-                # スコア表示領域らしいかどうかの条件 - 条件を緩和して検出率を向上
-                # 面積: 画像全体の0.5%～20%
-                # アスペクト比: 1.5～10.0 (横長)
-                is_candidate = (img_area * 0.005 < area < img_area * 0.20 and
-                                1.5 < aspect_ratio < 10.0)
-
-                if is_candidate:
-                    candidate_rects.append((x, y, x + w, y + h))
-        
-        return candidate_rects
-    
     def detect_score_regions(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
-        """画像から点数表示領域を自動検出"""
-        # 白い長方形の領域を検出
-        rects = self._find_score_rectangles(image)
+        """画像から点数表示領域を検出し、4分割する"""
+        # 全体を囲む白いフレームを検出
+        main_frame = self._find_main_score_frame(image)
         
-        # 4つの領域が検出されなかった場合は空の結果を返す
-        if len(rects) < 4:
-            print(f"警告: スコア領域が4つ未満しか検出できませんでした (検出数: {len(rects)})")
+        if main_frame is None:
+            print("警告: スコア表示のメインフレームを検出できませんでした。")
             return {}
 
-        # 4つ以上見つかった場合、面積が大きい順にソートして上位4つを選択
-        # これにより、ノイズで小さな四角形が検出された場合に対応
-        sorted_rects = sorted(rects, key=lambda r: (r[2]-r[0]) * (r[3]-r[1]), reverse=True)
-        top_four_rects = sorted_rects[:4]
+        x, y, w, h = main_frame
 
-        # プレイヤー名を割り当て（位置に基づいて）
-        # y座標、x座標でソート
-        top_four_rects.sort(key=lambda r: (r[1], r[0]))
+        # 横方向に4分割
+        region_w = w // 4
+        regions = []
+        for i in range(4):
+            region_x = x + i * region_w
+            # 最後の領域は端数を含める
+            if i == 3:
+                regions.append((region_x, y, x + w, y + h))
+            else:
+                regions.append((region_x, y, region_x + region_w, y + h))
 
+        # プレイヤー名を割り当て
+        # スリムスコア28Sの表示順（自分→下家→対面→上家）と仮定
         result = {}
         positions = ['自分', '下家', '対面', '上家']
-        for i, region in enumerate(top_four_rects):
+        for i, region in enumerate(regions):
             result[positions[i]] = region
         
         return result
@@ -124,7 +127,17 @@ class ScoreImageProcessor:
 
             # OCRに適した前処理
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
+
+            # サイズ正規化（幅300pxに）
+            h, w = gray.shape
+            if w == 0: return None
+            scale = 300 / w
+            resized = cv2.resize(gray, (300, int(h * scale)))
+
+            # ガウシアンブラーでノイズ除去
+            blurred = cv2.GaussianBlur(resized, (3, 3), 0)
+
+            enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
             # 背景を白、文字を黒に
             _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
