@@ -93,7 +93,7 @@ def render_image_upload_section() -> Dict[str, int]:
         st.image(uploaded_file, caption="アップロードされた画像", use_container_width=True)
         
         # デバッグモードの切り替え
-        debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=False)
+        debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=True)
         
         # 画像処理ボタン
         col1, col2 = st.columns(2)
