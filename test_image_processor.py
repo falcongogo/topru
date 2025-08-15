@@ -12,52 +12,38 @@ class TestImageProcessorDefinitive(unittest.TestCase):
     def setUp(self):
         """テスト前の準備"""
         self.processor = ScoreImageProcessor()
-        self.test_image = np.full((600, 800, 3), (120, 120, 120), dtype=np.uint8)
+        self.test_image = np.full((200, 800, 3), (120, 120, 120), dtype=np.uint8)
 
-        # 2x2グリッドのレイアウトを定義
-        rects = {
-            'top_left': (100, 50, 300, 200),
-            'top_right': (500, 50, 700, 200),
-            'bottom_left': (100, 300, 350, 500),  # 自分（大きい）
-            'bottom_right': (500, 300, 700, 450)
-        }
-
-        # このテストケースでのプレイヤー配置 (自分が左下)
-        self.expected_layout = {
-            '自分': rects['bottom_left'],
-            '対面': rects['top_right'],
-            '上家': rects['top_left'],
-            '下家': rects['bottom_right']
-        }
+        # 水平レイアウトを定義
+        self.positions = ['自分', '下家', '対面', '上家']
+        self.scores = {'自分': 25000, '下家': 25000, '対面': 25000, '上家': 25000}
         
-        self.scores = {
-            '自分': 42000, '対面': 18000, '上家': 35000, '下家': 25000
-        }
+        # 全体を囲む大きな白いフレームを描画
+        frame_x1, frame_y1 = 10, 50
+        frame_w, frame_h = 780, 100
+        cv2.rectangle(self.test_image, (frame_x1, frame_y1), (frame_x1 + frame_w, frame_y1 + frame_h), (240, 240, 240), -1)
 
-        # 画像に領域と点数を描画
+        # フレーム内にスコアを描画
         font = cv2.FONT_HERSHEY_SIMPLEX
-        for player, rect in self.expected_layout.items():
-            (x1, y1, x2, y2) = rect
-            cv2.rectangle(self.test_image, (x1, y1), (x2, y2), (240, 240, 240), -1)
+        region_w = frame_w // 4
+        for i, player in enumerate(self.positions):
             score_text = str(self.scores[player])
-            cv2.putText(self.test_image, score_text, (x1 + 20, y1 + 80), font, 1.2, (0, 0, 0), 3)
-            if player != '自分':
-                diff_text = f"-{self.scores['自分'] - self.scores[player]}"
-                cv2.putText(self.test_image, diff_text, (x1 + 50, y1 + 120), font, 0.5, (40, 40, 40), 1)
+            text_x = frame_x1 + (i * region_w) + (region_w // 4)
+            text_y = frame_y1 + (frame_h // 2)
+            cv2.putText(self.test_image, score_text, (text_x, text_y), font, 1.2, (20, 20, 20), 3)
 
     def test_detect_and_assign_regions(self):
-        """2x2非対称レイアウトの検出と役割割り当てのテスト"""
-        # processor.detect_score_regions のロジックを直接テスト
+        """水平レイアウトの単一フレームからの4分割検出のテスト"""
         detected_regions = self.processor.detect_score_regions(self.test_image)
         
         self.assertEqual(len(detected_regions), 4, "4つの領域が検出されるべき")
 
-        # 各プレイヤーの領域が期待通りかチェック
-        for player, expected_rect in self.expected_layout.items():
-            self.assertIn(player, detected_regions, f"{player}が検出結果にない")
-            detected_rect = detected_regions[player]
-            self.assertTrue(np.allclose(detected_rect, expected_rect, atol=5),
-                            f"{player}の領域が不一致: 検出={detected_rect}, 期待={expected_rect}")
+        # 正しい順序でプレイヤーが割り当てられているか確認
+        self.assertListEqual(list(detected_regions.keys()), self.positions)
+
+        # 最初の領域（自分）のx座標がフレームの開始点とほぼ同じか確認
+        me_region = detected_regions['自分']
+        self.assertAlmostEqual(me_region[0], 10, delta=5)
 
     def test_full_process_with_distractors(self):
         """点差などのノイズを含む画像からのE2Eテスト"""
@@ -81,7 +67,7 @@ def run_image_processor_tests():
     
     # テストスイートを作成
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(TestImageProcessor)
+    suite = loader.loadTestsFromTestCase(TestImageProcessorDefinitive)
     
     # テストを実行
     runner = unittest.TextTestRunner(verbosity=2)

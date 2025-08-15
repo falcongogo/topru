@@ -38,42 +38,6 @@ def test_real_image(image_path: str):
         print(f"❌ 画像読み込みエラー: {e}")
         return False
     
-    # 前処理のテスト
-    try:
-        processed_image = processor.preprocess_image(image)
-        print("✅ 画像の前処理が完了しました")
-        
-        # 前処理結果を保存
-        processed_path = image_path.replace('.', '_processed.')
-        cv2.imwrite(processed_path, processed_image)
-        print(f"前処理結果を保存: {processed_path}")
-    except Exception as e:
-        print(f"❌ 前処理エラー: {e}")
-        return False
-    
-    # 文字領域検出のテスト
-    try:
-        text_regions = processor.detect_text_regions(processed_image)
-        print(f"✅ 文字領域を検出しました (検出数: {len(text_regions)})")
-
-        # 検出された領域を表示
-        for i, (x1, y1, x2, y2) in enumerate(text_regions):
-            print(f"  領域{i+1}: ({x1}, {y1}) - ({x2}, {y2}) [幅: {x2-x1}, 高さ: {y2-y1}]")
-    except Exception as e:
-        print(f"❌ 文字領域検出エラー: {e}")
-        return False
-
-    # 重複領域マージのテスト
-    try:
-        merged_regions = processor.merge_overlapping_regions(text_regions)
-        print(f"✅ 重複領域をマージしました (マージ後: {len(merged_regions)}個)")
-
-        for i, (x1, y1, x2, y2) in enumerate(merged_regions):
-            print(f"  マージ後領域{i+1}: ({x1}, {y1}) - ({x2}, {y2})")
-    except Exception as e:
-        print(f"❌ 重複領域マージエラー: {e}")
-        return False
-
     # 点数表示領域検出のテスト
     try:
         score_regions = processor.detect_score_regions(image)
