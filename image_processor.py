@@ -10,7 +10,7 @@ class ScoreImageProcessor:
     
     def __init__(self):
         # OCR設定
-        self.ocr_config = '--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789'
+        self.ocr_config = '--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789'
         
         # 点数表示の特徴
         self.min_score = 1000
@@ -34,8 +34,8 @@ class ScoreImageProcessor:
         
         return binary
     
-    def _find_main_score_frame(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """画像からスコア表示全体を囲む最も大きな白い長方形の領域を検出する"""
+    def _find_all_candidate_rects(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """画像からスコア表示の候補となる全ての長方形領域を検出する"""
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
@@ -43,102 +43,99 @@ class ScoreImageProcessor:
         lower_white = np.array([0, 0, 150])
         upper_white = np.array([180, 50, 255])
         
-        # マスクを作成
         mask = cv2.inRange(hsv, lower_white, upper_white)
 
-        # 枠線の途切れを補完するための形態学的処理
-        kernel = np.ones((5,5),np.uint8)
-        dilated = cv2.dilate(mask, kernel, iterations = 2)
-        eroded = cv2.erode(dilated, kernel, iterations = 2)
-
         # 輪郭を検出
-        contours, _ = cv2.findContours(eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        if not contours:
-            return None
-
-        # 最も面積の大きい輪郭を見つける
-        main_contour = max(contours, key=cv2.contourArea)
-
-        # 輪郭の外接矩形を取得
-        x, y, w, h = cv2.boundingRect(main_contour)
-
-        # 画像全体の面積に対する割合でフィルタリング
         img_area = image.shape[0] * image.shape[1]
-        contour_area = w * h
+        candidate_rects = []
 
-        # あまりに小さい、または大きすぎる領域は除外
-        if not (img_area * 0.01 < contour_area < img_area * 0.9):
-            print(f"警告: 検出されたメイン領域のサイズが不適切です (画像全体の{contour_area/img_area:.1%})")
-            return None
+        for cnt in contours:
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-        return (x, y, w, h)
+            if len(approx) == 4:
+                x, y, w, h = cv2.boundingRect(cnt)
+                area = w * h
+                aspect_ratio = w / h if h > 0 else 0
+
+                # 個々のスコア表示領域らしいかどうかの条件
+                is_candidate = (img_area * 0.005 < area < img_area * 0.15 and
+                                1.0 < aspect_ratio < 8.0)
+
+                if is_candidate:
+                    candidate_rects.append((x, y, x + w, y + h))
+
+        return candidate_rects
 
     def detect_score_regions(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
-        """画像から点数表示領域を検出し、4分割する"""
-        # 全体を囲む白いフレームを検出
-        main_frame = self._find_main_score_frame(image)
+        """画像から4つの点数表示領域を検出し、プレイヤーを割り当てる"""
+        candidates = self._find_all_candidate_rects(image)
         
-        if main_frame is None:
-            print("警告: スコア表示のメインフレームを検出できませんでした。")
+        if len(candidates) < 4:
+            print(f"警告: スコア領域が4つ未満しか検出できませんでした (検出数: {len(candidates)})")
             return {}
 
-        x, y, w, h = main_frame
+        # 面積でソートして上位4つを選択
+        top_four = sorted(candidates, key=lambda r: (r[2]-r[0])*(r[3]-r[1]), reverse=True)[:4]
 
-        # 横方向に4分割
-        region_w = w // 4
-        regions = []
-        for i in range(4):
-            region_x = x + i * region_w
-            # 最後の領域は端数を含める
-            if i == 3:
-                regions.append((region_x, y, x + w, y + h))
-            else:
-                regions.append((region_x, y, region_x + region_w, y + h))
+        # 座標でソートして位置関係を把握
+        # y座標でソート -> 上段と下段に分ける
+        y_sorted = sorted(top_four, key=lambda r: r[1])
+        top_row = sorted(y_sorted[:2], key=lambda r: r[0])
+        bottom_row = sorted(y_sorted[2:], key=lambda r: r[0])
 
-        # プレイヤー名を割り当て
-        # スリムスコア28Sの表示順（自分→下家→対面→上家）と仮定
-        result = {}
-        positions = ['自分', '下家', '対面', '上家']
-        for i, region in enumerate(regions):
-            result[positions[i]] = region
-        
-        return result
+        top_left, top_right = top_row
+        bottom_left, bottom_right = bottom_row
+
+        # 最大領域が「自分」
+        me_rect = max(top_four, key=lambda r: (r[2]-r[0])*(r[3]-r[1]))
+
+        # 自分(me)の位置に基づいて役割を割り当て
+        # 一般的な麻雀卓のレイアウトを想定 (自分=下、対面=上、上家=左、下家=右)
+        # カメラアングルによって回転する可能性があるため、自分の位置を基準とする
+        if me_rect == bottom_left:
+            return {'自分': bottom_left, '下家': bottom_right, '対面': top_right, '上家': top_left}
+        elif me_rect == bottom_right:
+            return {'自分': bottom_right, '下家': top_right, '対面': top_left, '上家': bottom_left}
+        elif me_rect == top_right:
+            return {'自分': top_right, '下家': top_left, '対面': bottom_left, '上家': bottom_right}
+        elif me_rect == top_left:
+            return {'自分': top_left, '下家': bottom_left, '対面': bottom_right, '上家': top_right}
+
+        # 万が一、最大領域が4つの角のどれとも一致しない場合 (通常発生しない)
+        return {}
     
     def extract_score_region(self, image: np.ndarray, region: Tuple[int, int, int, int]) -> np.ndarray:
         """指定された領域を切り出し"""
         x1, y1, x2, y2 = region
         return image[y1:y2, x1:x2]
     
-    def read_score_from_region(self, region_image: np.ndarray) -> Optional[int]:
+    def read_score_from_region(self, region_image: np.ndarray, player: str) -> Optional[int]:
         """指定された領域から点数を読み取り"""
         try:
-            # 領域が小さすぎる場合はスキップ
-            if region_image.shape[0] < 10 or region_image.shape[1] < 20:
+            if region_image.shape[0] < 20 or region_image.shape[1] < 40:
                 return None
 
-            # 余白をカットして枠線の影響を除去 (上下左右8%)
-            h, w = region_image.shape[:2]
-            margin_y, margin_x = int(h * 0.08), int(w * 0.08)
-            roi = region_image[margin_y : h - margin_y, margin_x : w - margin_x]
+            # グレースケールに変換
+            gray = cv2.cvtColor(region_image, cv2.COLOR_BGR2GRAY)
 
-            if roi.shape[0] < 5 or roi.shape[1] < 10:
-                return None
+            # 他家の場合は、下部の点差表示を無視するために上半分をクロップ
+            if player != '自分':
+                h, w = gray.shape
+                gray = gray[0:int(h * 0.7)]
 
-            # OCRに適した前処理
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-            # サイズ正規化（幅300pxに）
+            # リサイズしてOCR精度を安定させる
             h, w = gray.shape
             if w == 0: return None
-            scale = 300 / w
-            resized = cv2.resize(gray, (300, int(h * scale)))
+            resized = cv2.resize(gray, (w*2, h*2), interpolation=cv2.INTER_CUBIC)
 
-            # ガウシアンブラーでノイズ除去
-            blurred = cv2.GaussianBlur(resized, (3, 3), 0)
+            # コントラスト強調
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(resized)
 
-            enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
-            # 背景を白、文字を黒に
+            # 二値化
             _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
             # OCRで文字認識
@@ -148,14 +145,11 @@ class ScoreImageProcessor:
             numbers = re.findall(r'\d+', text)
             
             if numbers:
-                # 各数字をチェック
+                # 妥当なスコアが見つかったら、それを返す
                 for number in numbers:
                     score = int(number)
-                    
-                    # 点数として妥当かチェック
                     if self._is_valid_score(score):
                         return score
-            
             return None
             
         except Exception as e:
@@ -194,7 +188,7 @@ class ScoreImageProcessor:
             # 検出された領域を元のカラー画像から切り出す
             region_image = self.extract_score_region(image, region)
             # 領域内の画像をOCRで読み取り
-            score = self.read_score_from_region(region_image)
+            score = self.read_score_from_region(region_image, player)
             
             if score is not None:
                 scores[player] = score
@@ -221,7 +215,7 @@ class ScoreImageProcessor:
             # 検出された領域を元のカラー画像から切り出す
             region_image = self.extract_score_region(image, region)
             # 領域内の画像をOCRで読み取り
-            score = self.read_score_from_region(region_image)
+            score = self.read_score_from_region(region_image, player)
             
             if score is not None:
                 scores[player] = score
