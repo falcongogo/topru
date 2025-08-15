@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 import pytesseract
 import re
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 
 class ScoreImageProcessor:
     """スリムスコア28Sの点数表示を読み取るクラス"""
