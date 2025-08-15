@@ -340,11 +340,13 @@ class ScoreImageProcessor:
         if outer_frame_coords:
             x_outer, y_outer, w_outer, h_outer = outer_frame_coords
             outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
-            inner_lcd_corners_rel = self._find_inner_lcd_screen(outer_frame_img)
+            contour = self._find_inner_lcd_screen_contour(outer_frame_img)
 
-            if inner_lcd_corners_rel is not None:
-                inner_lcd_corners_abs = inner_lcd_corners_rel + (x_outer, y_outer)
-                cv2.drawContours(debug_image, [inner_lcd_corners_abs], -1, (0, 255, 0), 2)
+            if contour is not None:
+                rect = cv2.minAreaRect(contour)
+                box = cv2.boxPoints(rect)
+                box_abs = np.intp(box + (x_outer, y_outer))
+                cv2.drawContours(debug_image, [box_abs], -1, (0, 255, 0), 2)
 
         # 補正後のスクリーン画像を取得
         warped_screen = self.detect_and_warp_screen(image)
@@ -362,20 +364,24 @@ class ScoreImageProcessor:
         cv2.line(warped_screen, (x1_split, 0), (x1_split, h), (0, 0, 255), 1)
         cv2.line(warped_screen, (x2_split, 0), (x2_split, h), (0, 0, 255), 1)
 
-        mid_w = x2_split - x1_split
         mid_h = h // 2
         cv2.line(warped_screen, (x1_split, mid_h), (x2_split, mid_h), (0, 0, 255), 1)
 
         # 2つの画像を結合して表示
         h1, w1 = debug_image.shape[:2]
         h2, w2 = warped_screen.shape[:2]
-        combined_height = h1 + h2
-        combined_width = max(w1, w2)
+        # 結合後の幅をオリジナル画像の幅に合わせる
+        combined_width = w1
+        # 高さを計算
+        combined_height = h1 + int(h2 * (w1 / w2))
 
         combined_image = np.zeros((combined_height, combined_width, 3), dtype=np.uint8)
         combined_image[0:h1, 0:w1] = debug_image
-        combined_image[h1:h1+h2, 0:w2] = warped_screen
-        
+
+        # 補正後画像をリサイズして結合
+        resized_warped = cv2.resize(warped_screen, (w1, int(h2 * (w1 / w2))))
+        combined_image[h1:, 0:w1] = resized_warped
+
         return combined_image
 
     def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
@@ -385,74 +391,30 @@ class ScoreImageProcessor:
         debug_bundle = {}
         original_image = image.copy()
 
-        # 1. HSVカラーマスク
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lower_white = np.array([0, 0, 150])
-        upper_white = np.array([180, 50, 255])
-        mask = cv2.inRange(hsv, lower_white, upper_white)
-        debug_bundle['hsv_mask'] = mask
-
-        # 2. 形態学的処理後のマスク
-        kernel = np.ones((5,5),np.uint8)
-        dilated = cv2.dilate(mask, kernel, iterations = 2)
-        eroded = cv2.erode(dilated, kernel, iterations = 2)
-        debug_bundle['morph_mask'] = eroded
-
-        # 3. 検出されたメインフレーム
+        # 1. メインフレーム検出
         main_frame_img = original_image.copy()
-        main_frame = self._find_main_score_frame(image)
-        if main_frame:
-            x, y, w, h = main_frame
+        outer_frame_coords = self._find_main_score_frame(image)
+        if outer_frame_coords:
+            x, y, w, h = outer_frame_coords
             cv2.rectangle(main_frame_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
         debug_bundle['main_frame'] = main_frame_img
 
-        # 4. 内側LCD検出用の連結成分解析の可視化
-        inner_lcd_debug_img = original_image.copy()
-        outer_frame = self._find_main_score_frame(image)
-        if outer_frame:
-            x_outer, y_outer, w_outer, h_outer = outer_frame
-            outer_frame_img_cropped = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
+        # 2. 傾き補正済みスクリーン
+        warped_screen = self.detect_and_warp_screen(image)
+        if warped_screen is None:
+            debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
+            cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        else:
+            debug_bundle['warped_screen'] = warped_screen
 
-            # 色マスク作成
-            hsv = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2HSV)
-            lower_lcd_color = np.array([0, 0, 100])
-            upper_lcd_color = np.array([180, 80, 255])
-            mask = cv2.inRange(hsv, lower_lcd_color, upper_lcd_color)
+        # 3. 領域分割
+        region_images = self.split_screen_into_regions(warped_screen)
+        debug_bundle['split_regions'] = region_images
 
-            # 連結成分を解析
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
-
-            # 各連結成分を色付けして可視化
-            if num_labels > 1:
-                # 背景を除いたラベルにランダムな色を割り当て
-                colors = np.random.randint(0, 255, size=(num_labels, 3), dtype=np.uint8)
-                colors[0] = [0, 0, 0] # 背景は黒
-                colored_labels = colors[labels]
-                # 元画像とブレンドして見やすくする
-                inner_lcd_debug_img[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer] = cv2.addWeighted(outer_frame_img_cropped, 0.6, colored_labels.astype(np.uint8), 0.4, 0)
-
-            # 最終的なバウンディングボックスを描画
-            inner_lcd_rel = self._find_inner_lcd_screen(outer_frame_img_cropped)
-            if inner_lcd_rel:
-                x_rel, y_rel, w_rel, h_rel = inner_lcd_rel
-                cv2.rectangle(inner_lcd_debug_img, (x_outer + x_rel, y_outer + y_rel), (x_outer + x_rel + w_rel, y_outer + y_rel + h_rel), (0, 255, 255), 2) # 黄色
-
-        debug_bundle['inner_lcd_components'] = inner_lcd_debug_img
-
-        # 6. 最終的な割り当て（4分割）
-        final_assignment_img = original_image.copy()
-        regions = self.detect_score_regions(image)
-        for player, (x1, y1, x2, y2) in regions.items():
-            cv2.rectangle(final_assignment_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(final_assignment_img, player, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        debug_bundle['final_assignments'] = final_assignment_img
-
-        # 6. 各プレイヤーのOCR前処理画像
+        # 4. 各プレイヤーのOCR前処理画像
         pre_ocr_images = {}
-        for player, region in regions.items():
+        for player, region_image in region_images.items():
             try:
-                region_image = self.extract_score_region(original_image, region)
-
                 # read_score_from_regionのロジックをここに展開して、中間画像を生成
                 if region_image.shape[0] < 10 or region_image.shape[1] < 20: continue
                 h, w = region_image.shape[:2]
@@ -474,7 +436,6 @@ class ScoreImageProcessor:
                 pre_ocr_images[player] = binary
             except Exception as e:
                 print(f"デバッグ情報（OCR画像）生成中にエラー: {player} - {e}")
-
         debug_bundle['pre_ocr_images'] = pre_ocr_images
 
         return debug_bundle
