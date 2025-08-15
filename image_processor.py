@@ -60,9 +60,9 @@ class ScoreImageProcessor:
                 area = w * h
                 aspect_ratio = w / h if h > 0 else 0
 
-                # 個々のスコア表示領域らしいかどうかの条件
-                is_candidate = (img_area * 0.005 < area < img_area * 0.15 and
-                                1.0 < aspect_ratio < 8.0)
+                # 個々のスコア表示領域らしいかどうかの条件（緩和済み）
+                is_candidate = (img_area * 0.001 < area < img_area * 0.15 and
+                                0.8 < aspect_ratio < 10.0)
 
                 if is_candidate:
                     candidate_rects.append((x, y, x + w, y + h))
