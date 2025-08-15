@@ -86,12 +86,17 @@ class ScoreImageProcessor:
         # マスクを作成
         mask = cv2.inRange(hsv, lower_lcd_color, upper_lcd_color)
 
-        # マスクのノイズを除去するための形態学的処理
-        kernel = np.ones((5,5), np.uint8)
-        cleaned_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+        # マスク内の文字による穴を埋めるための強力な形態学的処理
+        # 横長のカーネルで、横方向の文字の隙間を積極的に埋める
+        dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 5))
+        dilated_mask = cv2.dilate(mask, dilate_kernel, iterations=2)
+
+        # 全体の形を元に戻すための収縮処理
+        erode_kernel = np.ones((5,5), np.uint8)
+        eroded_mask = cv2.erode(dilated_mask, erode_kernel, iterations=1)
 
         # 輪郭を検出
-        contours, _ = cv2.findContours(cleaned_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(eroded_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if not contours:
             return None
