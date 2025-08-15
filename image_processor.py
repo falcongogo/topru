@@ -75,15 +75,23 @@ class ScoreImageProcessor:
         return (x, y, w, h)
 
     def _find_inner_lcd_screen(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """画像領域内から、最も大きな長方形（LCDスクリーンを想定）を見つける"""
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        """画像領域内から、薄い水色のLCDスクリーン領域を見つける"""
+        # HSV色空間に変換
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # LCDスクリーン（暗い）とフレーム（明るい）のコントラストを利用
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # 薄い水色のHSV範囲を定義
+        lower_light_blue = np.array([90, 50, 100])
+        upper_light_blue = np.array([130, 255, 255])
 
-        # 最も外側の輪郭のみを検出
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # マスクを作成
+        mask = cv2.inRange(hsv, lower_light_blue, upper_light_blue)
+
+        # マスクのノイズを除去するための形態学的処理
+        kernel = np.ones((3,3), np.uint8)
+        cleaned_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+        # 輪郭を検出
+        contours, _ = cv2.findContours(cleaned_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if not contours:
             return None
@@ -317,10 +325,11 @@ class ScoreImageProcessor:
             x_outer, y_outer, w_outer, h_outer = outer_frame
             outer_frame_img_cropped = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
 
-            gray_cropped = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2GRAY)
-            blurred_cropped = cv2.GaussianBlur(gray_cropped, (5, 5), 0)
-            _, thresh_cropped = cv2.threshold(blurred_cropped, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            debug_bundle['inner_lcd_threshold'] = thresh_cropped
+            hsv_cropped = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2HSV)
+            lower_light_blue = np.array([90, 50, 100])
+            upper_light_blue = np.array([130, 255, 255])
+            mask_cropped = cv2.inRange(hsv_cropped, lower_light_blue, upper_light_blue)
+            debug_bundle['inner_lcd_color_mask'] = mask_cropped
 
         # 5. 検出された内側LCDスクリーン
         inner_lcd_img = main_frame_img.copy() # メインフレームが描画された画像から開始

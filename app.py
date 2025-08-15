@@ -131,8 +131,8 @@ def render_image_upload_section() -> Dict[str, int]:
                         if 'top_four' in debug_bundle:
                             st.image(debug_bundle['top_four'], caption="3. 上位4つの候補領域 (青枠)", use_container_width=True, channels="BGR")
 
-                        if 'inner_lcd_threshold' in debug_bundle:
-                            st.image(debug_bundle['inner_lcd_threshold'], caption="内側LCD検出用マスク", use_container_width=True)
+                        if 'inner_lcd_color_mask' in debug_bundle:
+                            st.image(debug_bundle['inner_lcd_color_mask'], caption="内側LCD検出用カラーマスク (水色)", use_container_width=True)
                             
                         if 'final_assignments' in debug_bundle:
                             st.image(debug_bundle['final_assignments'], caption="最終的なプレイヤー割り当て (緑枠)", use_container_width=True, channels="BGR")
