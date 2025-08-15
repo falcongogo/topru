@@ -362,21 +362,7 @@ class ScoreImageProcessor:
 
         debug_bundle['inner_lcd_components'] = inner_lcd_debug_img
 
-
-        # 5. 検出された内側LCDスクリーン (削除)
-        # inner_lcd_img = main_frame_img.copy() # メインフレームが描画された画像から開始
-        outer_frame = self._find_main_score_frame(image)
-        if outer_frame:
-            x_outer, y_outer, w_outer, h_outer = outer_frame
-            outer_frame_img_cropped = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
-            inner_lcd_rel = self._find_inner_lcd_screen(outer_frame_img_cropped)
-            if inner_lcd_rel:
-                x_rel, y_rel, w_rel, h_rel = inner_lcd_rel
-                # 絶対座標に変換して描画
-                cv2.rectangle(inner_lcd_img, (x_outer + x_rel, y_outer + y_rel), (x_outer + x_rel + w_rel, y_outer + y_rel + h_rel), (0, 255, 255), 2) # 黄色
-        debug_bundle['inner_lcd'] = inner_lcd_img
-
-        # 5. 最終的な割り当て（4分割）
+        # 6. 最終的な割り当て（4分割）
         final_assignment_img = original_image.copy()
         regions = self.detect_score_regions(image)
         for player, (x1, y1, x2, y2) in regions.items():
