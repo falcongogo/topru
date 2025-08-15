@@ -58,23 +58,19 @@ def process_uploaded_image(uploaded_file) -> Dict[str, int]:
         st.error(f"画像処理中にエラーが発生しました: {str(e)}")
         return {}
 
-def process_uploaded_image_debug(uploaded_file):
-    """アップロードされた画像を処理してデバッグ情報を取得"""
+def process_uploaded_image_full_debug(uploaded_file):
+    """アップロードされた画像を処理して詳細なデバッグ情報を取得"""
     if not initialize_image_processor():
         return None
     
     try:
-        # アップロードされたファイルをOpenCV形式に変換
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
         if image is None:
             raise ValueError("アップロードされた画像を読み込めませんでした")
         
-        # デバッグ情報を取得
-        debug_image, regions = st.session_state.image_processor.debug_detection(image)
-        
-        return debug_image, regions
+        return st.session_state.image_processor.get_full_debug_bundle(image)
         
     except Exception as e:
         st.error(f"デバッグ処理中にエラーが発生しました: {str(e)}")
@@ -114,23 +110,40 @@ def render_image_upload_section() -> Dict[str, int]:
                 else:
                     st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
         
-        # デバッグモードの場合、検出結果を可視化
+        # デバッグモードの場合、詳細な途中経過を表示
         if debug_mode and uploaded_file is not None:
             with col2:
-                if st.button('🔍 検出領域を表示', type='secondary'):
-                    with st.spinner('検出領域を分析中...'):
-                        debug_result = process_uploaded_image_debug(uploaded_file)
+                if st.button('🔧 詳細デバッグ情報を表示', type='secondary'):
+                    # ユーザーが再度アップロードしなくてもいいように、ファイルポインタをリセット
+                    uploaded_file.seek(0)
+                    with st.spinner('詳細デバッグ情報を生成中...'):
+                        debug_bundle = process_uploaded_image_full_debug(uploaded_file)
+
+                    if debug_bundle:
+                        st.subheader("🛠️ デバッグ情報")
+
+                        if 'hsv_mask' in debug_bundle:
+                            st.image(debug_bundle['hsv_mask'], caption="1. HSVカラーマスク (白・灰色領域)", use_container_width=True)
                         
-                        if debug_result:
-                            debug_image, regions = debug_result
-                            st.image(debug_image, caption="検出された領域（緑の枠）", use_container_width=True)
+                        if 'all_candidates' in debug_bundle:
+                            st.image(debug_bundle['all_candidates'], caption="2. 検出された全候補領域 (赤枠)", use_container_width=True, channels="BGR")
+
+                        if 'top_four' in debug_bundle:
+                            st.image(debug_bundle['top_four'], caption="3. 上位4つの候補領域 (青枠)", use_container_width=True, channels="BGR")
                             
-                            if regions:
-                                st.info(f"検出された領域数: {len(regions)}")
-                                for i, (x1, y1, x2, y2) in enumerate(regions):
-                                    st.write(f"領域{i+1}: ({x1}, {y1}) - ({x2}, {y2})")
-                            else:
-                                st.warning("検出された領域がありません")
+                        if 'final_assignments' in debug_bundle:
+                            st.image(debug_bundle['final_assignments'], caption="4. 最終的なプレイヤー割り当て (緑枠)", use_container_width=True, channels="BGR")
+
+                        if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
+                            st.markdown("---")
+                            st.markdown("##### 5. OCR直前の画像（各プレイヤー）")
+                            ocr_cols = st.columns(len(debug_bundle['pre_ocr_images']))
+                            for i, (player, img) in enumerate(debug_bundle['pre_ocr_images'].items()):
+                                with ocr_cols[i]:
+                                    st.write(player)
+                                    st.image(img, caption=f"{player}への入力画像", use_container_width=True)
+                        else:
+                            st.warning("OCR対象の画像を生成できませんでした。")
     
     return scores
 

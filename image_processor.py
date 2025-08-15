@@ -237,6 +237,78 @@ class ScoreImageProcessor:
         
         return debug_image, list(regions.values())
 
+    def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        画像処理の全ステップのデバッグ情報を生成する。
+        """
+        debug_bundle = {}
+        original_image = image.copy()
+
+        # 1. 色マスクの生成
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        lower_white = np.array([0, 0, 150])
+        upper_white = np.array([180, 50, 255])
+        mask = cv2.inRange(hsv, lower_white, upper_white)
+        debug_bundle['hsv_mask'] = mask
+
+        # 2. 全ての候補領域を描画
+        all_candidates_img = original_image.copy()
+        # _find_all_candidate_rectsはx,y,w,hを返すので変換
+        all_candidates_raw = self._find_all_candidate_rects(image)
+        all_candidates = [(r[0], r[1], r[0]+r[2], r[1]+r[3]) for r in all_candidates_raw]
+
+        for i, (x1, y1, x2, y2) in enumerate(all_candidates):
+            cv2.rectangle(all_candidates_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            cv2.putText(all_candidates_img, str(i), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        debug_bundle['all_candidates'] = all_candidates_img
+
+        # 3. 上位4つの領域を描画
+        top_four_img = original_image.copy()
+        if len(all_candidates) >= 4:
+            top_four_raw = sorted(all_candidates_raw, key=lambda r: r[2] * r[3], reverse=True)[:4]
+            top_four = [(r[0], r[1], r[0]+r[2], r[1]+r[3]) for r in top_four_raw]
+            for i, (x1, y1, x2, y2) in enumerate(top_four):
+                cv2.rectangle(top_four_img, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        debug_bundle['top_four'] = top_four_img
+
+        # 4. 最終的な割り当てを描画
+        final_assignment_img = original_image.copy()
+        regions = self.detect_score_regions(image)
+        for player, (x1, y1, x2, y2) in regions.items():
+            cv2.rectangle(final_assignment_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(final_assignment_img, player, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        debug_bundle['final_assignments'] = final_assignment_img
+
+        # 5. 各プレイヤーのOCR前処理画像
+        pre_ocr_images = {}
+        for player, region in regions.items():
+            try:
+                region_image = self.extract_score_region(original_image, region)
+
+                # read_score_from_regionのロジックをここに展開
+                if region_image.shape[0] < 20 or region_image.shape[1] < 40: continue
+
+                gray = cv2.cvtColor(region_image, cv2.COLOR_BGR2GRAY)
+                if player != '自分':
+                    h, w = gray.shape
+                    gray = gray[0:int(h * 0.7)]
+
+                h, w = gray.shape
+                if w == 0: continue
+                resized = cv2.resize(gray, (w*2, h*2), interpolation=cv2.INTER_CUBIC)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                enhanced = clahe.apply(resized)
+                _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+                # OCRに渡す直前の画像を保存
+                pre_ocr_images[player] = binary
+            except Exception as e:
+                print(f"デバッグ情報生成中にエラー: {player} - {e}")
+
+        debug_bundle['pre_ocr_images'] = pre_ocr_images
+
+        return debug_bundle
+
 def test_image_processor():
     """画像処理モジュールのテスト"""
     processor = ScoreImageProcessor()
