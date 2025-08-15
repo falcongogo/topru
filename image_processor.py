@@ -137,11 +137,16 @@ class ScoreImageProcessor:
             x, y, w, h = (x_outer + x_inner_rel, y_outer + y_inner_rel, w_inner, h_inner)
 
         # 3. 検出された領域を新しいレイアウトで分割
-        # 3.1 水平に3分割
-        region_w = w // 3
-        left_region = (x, y, x + region_w, y + h)
-        middle_region_base = (x + region_w, y, x + 2 * region_w, y + h)
-        right_region = (x + 2 * region_w, y, x + w, y + h)
+        # 3.1 水平に2:3:2の比率で分割
+        total_parts = 7
+        part_w = w / total_parts
+
+        x1_split = x + int(2 * part_w)
+        x2_split = x + int(5 * part_w) # 2+3=5
+
+        left_region = (x, y, x1_split, y + h)
+        middle_region_base = (x1_split, y, x2_split, y + h)
+        right_region = (x2_split, y, x + w, y + h) # 端数が出ないように最後は x + w まで
 
         # 3.2 中央の領域を垂直に2分割
         mid_x1, mid_y1, mid_x2, mid_y2 = middle_region_base
