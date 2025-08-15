@@ -39,8 +39,8 @@ class ScoreImageProcessor:
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # 白色の範囲を定義 (低彩度・高輝度)
-        lower_white = np.array([0, 0, 180])
+        # 白〜灰色の範囲を定義 (低彩度・中〜高輝度)
+        lower_white = np.array([0, 0, 150])
         upper_white = np.array([180, 50, 255])
         
         # マスクを作成
