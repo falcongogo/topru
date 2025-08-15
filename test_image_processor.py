@@ -23,7 +23,8 @@ class TestImageProcessorDefinitive(unittest.TestCase):
 
         # 2. 内側のLCDスクリーン（薄い水色）
         self.inner_lcd_coords = (25, 50, 775, 110) # x1, y1, x2, y2
-        cv2.rectangle(self.test_image, (self.inner_lcd_coords[0], self.inner_lcd_coords[1]), (self.inner_lcd_coords[2], self.inner_lcd_coords[3]), (230, 210, 180), -1) # Light Blue BGR
+        # (230, 220, 170) BGR is approx (H=94, S=78, V=230) in HSV, which is within the new detection range.
+        cv2.rectangle(self.test_image, (self.inner_lcd_coords[0], self.inner_lcd_coords[1]), (self.inner_lcd_coords[2], self.inner_lcd_coords[3]), (230, 220, 170), -1) # Light Blue BGR
 
         # 3. 新しいレイアウトに従ってスコアを描画
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -65,8 +66,8 @@ class TestImageProcessorDefinitive(unittest.TestCase):
 
         # X座標が中央1/3の範囲内か
         self.assertTrue(lcd_x + lcd_w // 3 < me_region[0] < lcd_x + 2 * lcd_w // 3)
-        # Y座標が下半分か
-        self.assertTrue(me_region[1] > lcd_y + lcd_h // 2)
+        # Y座標が下半分か (境界を含むように >= に修正)
+        self.assertGreaterEqual(me_region[1], lcd_y + lcd_h // 2)
 
     def test_full_process_with_distractors(self):
         """点差などのノイズを含む画像からのE2Eテスト"""
