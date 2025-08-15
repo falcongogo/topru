@@ -75,20 +75,20 @@ class ScoreImageProcessor:
         return (x, y, w, h)
 
     def _find_inner_lcd_screen(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """画像領域内から、薄い水色のLCDスクリーン領域を見つける"""
+        """画像領域内から、明るく彩度の低いLCDスクリーン領域を見つける"""
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # 薄い水色のHSV範囲を定義
-        lower_light_blue = np.array([90, 50, 100])
-        upper_light_blue = np.array([130, 255, 255])
+        # 明るく彩度の低い色のHSV範囲を定義（汎用性を高める）
+        lower_lcd_color = np.array([0, 0, 100])
+        upper_lcd_color = np.array([180, 80, 255])
 
         # マスクを作成
-        mask = cv2.inRange(hsv, lower_light_blue, upper_light_blue)
+        mask = cv2.inRange(hsv, lower_lcd_color, upper_lcd_color)
 
         # マスクのノイズを除去するための形態学的処理
-        kernel = np.ones((3,3), np.uint8)
-        cleaned_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        kernel = np.ones((5,5), np.uint8)
+        cleaned_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
 
         # 輪郭を検出
         contours, _ = cv2.findContours(cleaned_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -106,7 +106,7 @@ class ScoreImageProcessor:
         return cv2.boundingRect(main_contour)
 
     def detect_score_regions(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
-        """画像から点数表示領域を検出し、4分割する"""
+        """画像から点数表示領域を検出し、ユーザー指定のレイアウトに従って分割する"""
         # 1. 全体を囲む外側フレームを検出
         outer_frame = self._find_main_score_frame(image)
 
@@ -129,25 +129,27 @@ class ScoreImageProcessor:
             x_inner_rel, y_inner_rel, w_inner, h_inner = inner_lcd_rel
             x, y, w, h = (x_outer + x_inner_rel, y_outer + y_inner_rel, w_inner, h_inner)
 
-        # 3. 検出された領域（LCDスクリーン）を4分割
-        region_w = w // 4
-        regions = []
-        for i in range(4):
-            region_x = x + i * region_w
-            # 最後の領域は端数を含める
-            if i == 3:
-                regions.append((region_x, y, x + w, y + h))
-            else:
-                regions.append((region_x, y, region_x + region_w, y + h))
+        # 3. 検出された領域を新しいレイアウトで分割
+        # 3.1 水平に3分割
+        region_w = w // 3
+        left_region = (x, y, x + region_w, y + h)
+        middle_region_base = (x + region_w, y, x + 2 * region_w, y + h)
+        right_region = (x + 2 * region_w, y, x + w, y + h)
 
-        # プレイヤー名を割り当て
-        # スリムスコア28Sの表示順（自分→下家→対面→上家）と仮定
-        result = {}
-        positions = ['自分', '下家', '対面', '上家']
-        for i, region in enumerate(regions):
-            result[positions[i]] = region
+        # 3.2 中央の領域を垂直に2分割
+        mid_x1, mid_y1, mid_x2, mid_y2 = middle_region_base
+        middle_top_region = (mid_x1, mid_y1, mid_x2, mid_y1 + (mid_y2 - mid_y1) // 2)
+        middle_bottom_region = (mid_x1, mid_y1 + (mid_y2 - mid_y1) // 2, mid_x2, mid_y2)
 
-        return result
+        # 4. プレイヤー名を割り当て
+        regions = {
+            '上家': left_region,
+            '対面': middle_top_region,
+            '自分': middle_bottom_region,
+            '下家': right_region
+        }
+
+        return regions
     
     def extract_score_region(self, image: np.ndarray, region: Tuple[int, int, int, int]) -> np.ndarray:
         """指定された領域を切り出し"""

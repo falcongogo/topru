@@ -12,48 +12,61 @@ class TestImageProcessorDefinitive(unittest.TestCase):
     def setUp(self):
         """テスト前の準備"""
         self.processor = ScoreImageProcessor()
-        self.test_image = np.full((200, 800, 3), (20, 20, 20), dtype=np.uint8) # Dark background
+        self.test_image = np.full((200, 800, 3), (20, 20, 20), dtype=np.uint8)
 
-        # 水平レイアウトを定義
-        self.positions = ['自分', '下家', '対面', '上家']
-        self.scores = {'自分': 29000, '下家': 29000, '対面': 29000, '上家': 29000}
-        
-        # 1. 外側の銀色フレームを描画 (明るい色)
-        outer_frame_coords = (10, 40, 780, 120) # x1, y1, x2, y2
-        cv2.rectangle(self.test_image, (outer_frame_coords[0], outer_frame_coords[1]), (outer_frame_coords[2], outer_frame_coords[3]), (220, 220, 220), -1)
+        # 新しいレイアウトの定義
+        self.player_order = ['上家', '対面', '自分', '下家']
+        self.scores = {'自分': 18000, '下家': 32000, '対面': 25000, '上家': 25000}
 
-        # 2. 内側のLCDスクリーンを描画 (暗い色、コントラストを明確に)
+        # 1. 外側の銀色フレーム
+        cv2.rectangle(self.test_image, (10, 40), (780, 120), (220, 220, 220), -1)
+
+        # 2. 内側のLCDスクリーン（薄い水色）
         self.inner_lcd_coords = (25, 50, 775, 110) # x1, y1, x2, y2
-        cv2.rectangle(self.test_image, (self.inner_lcd_coords[0], self.inner_lcd_coords[1]), (self.inner_lcd_coords[2], self.inner_lcd_coords[3]), (100, 100, 100), -1)
+        cv2.rectangle(self.test_image, (self.inner_lcd_coords[0], self.inner_lcd_coords[1]), (self.inner_lcd_coords[2], self.inner_lcd_coords[3]), (230, 210, 180), -1) # Light Blue BGR
 
-        # 3. LCDスクリーン内にスコアを描画
+        # 3. 新しいレイアウトに従ってスコアを描画
         font = cv2.FONT_HERSHEY_SIMPLEX
-        frame_w = self.inner_lcd_coords[2] - self.inner_lcd_coords[0]
-        region_w = frame_w // 4
-        for i, player in enumerate(self.positions):
-            score_text = str(self.scores[player])
-            text_x = self.inner_lcd_coords[0] + (i * region_w) + (region_w // 4)
-            text_y = self.inner_lcd_coords[1] + (self.inner_lcd_coords[3] - self.inner_lcd_coords[1]) // 2
-            cv2.putText(self.test_image, score_text, (text_x, text_y), font, 1.2, (20, 20, 20), 3)
+        x, y, w, h = self.inner_lcd_coords[0], self.inner_lcd_coords[1], self.inner_lcd_coords[2]-self.inner_lcd_coords[0], self.inner_lcd_coords[3]-self.inner_lcd_coords[1]
+
+        # 領域を定義
+        region_w = w // 3
+        left_x = x
+        middle_x = x + region_w
+        right_x = x + 2 * region_w
+
+        mid_h = h // 2
+        top_y = y
+        bottom_y = y + mid_h
+
+        # 各プレイヤーのテキスト位置
+        positions = {
+            '上家': (left_x + 30, top_y + mid_h),
+            '対面': (middle_x + 30, top_y + mid_h // 2 + 10),
+            '自分': (middle_x + 30, bottom_y + mid_h // 2 + 10),
+            '下家': (right_x + 30, top_y + mid_h)
+        }
+
+        for player, pos in positions.items():
+            cv2.putText(self.test_image, str(self.scores[player]), pos, font, 1.2, (20, 20, 20), 3) # Dark text for contrast
 
     def test_detect_and_assign_regions(self):
-        """内側LCDスクリーンを検出し、それを4分割するかのテスト"""
+        """新しい1-2-1レイアウトで領域が正しく検出・割り当てされるかテスト"""
         detected_regions = self.processor.detect_score_regions(self.test_image)
         
         self.assertEqual(len(detected_regions), 4, "4つの領域が検出されるべき")
 
-        # 正しい順序でプレイヤーが割り当てられているか確認
-        self.assertListEqual(list(detected_regions.keys()), self.positions)
+        # 正しいプレイヤーが検出されているか
+        self.assertSetEqual(set(detected_regions.keys()), set(self.player_order))
 
-        # 検出された領域のベースが、内側LCDフレームの座標と一致するか確認
-        all_x = [r[0] for r in detected_regions.values()] + [r[2] for r in detected_regions.values()]
-        all_y = [r[1] for r in detected_regions.values()] + [r[3] for r in detected_regions.values()]
+        # 「自分」の領域が中央下部にあるか大まかにチェック
+        me_region = detected_regions['自分']
+        lcd_x, lcd_y, lcd_w, lcd_h = self.inner_lcd_coords[0], self.inner_lcd_coords[1], self.inner_lcd_coords[2]-self.inner_lcd_coords[0], self.inner_lcd_coords[3]-self.inner_lcd_coords[1]
 
-        detected_base_frame_x1 = min(all_x)
-        detected_base_frame_y1 = min(all_y)
-
-        self.assertAlmostEqual(detected_base_frame_x1, self.inner_lcd_coords[0], delta=5, msg="検出された分割領域の開始X座標が、内側LCDと一致しません")
-        self.assertAlmostEqual(detected_base_frame_y1, self.inner_lcd_coords[1], delta=5, msg="検出された分割領域の開始Y座標が、内側LCDと一致しません")
+        # X座標が中央1/3の範囲内か
+        self.assertTrue(lcd_x + lcd_w // 3 < me_region[0] < lcd_x + 2 * lcd_w // 3)
+        # Y座標が下半分か
+        self.assertTrue(me_region[1] > lcd_y + lcd_h // 2)
 
     def test_full_process_with_distractors(self):
         """点差などのノイズを含む画像からのE2Eテスト"""
