@@ -74,13 +74,14 @@ class ScoreImageProcessor:
 
         return (x, y, w, h)
 
-    def _find_inner_lcd_screen(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """画像領域内から、特徴的な水色を頼りにLCDスクリーン領域を見つける"""
+    def _find_inner_lcd_screen_contour(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """
+        画像領域内から、特徴的な水色を頼りにLCDスクリーン領域の輪郭を見つけて返す。
+        """
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         # LCDスクリーンの水色の範囲を定義
-        # H: 85-105 (シアン系), S: 50-255 (ある程度の彩度), V: 100-255 (明るい)
         lower_lcd_blue = np.array([85, 50, 100])
         upper_lcd_blue = np.array([105, 255, 255])
 
@@ -107,66 +108,110 @@ class ScoreImageProcessor:
             print(f"警告: 検出された水色領域が小さすぎます (面積: {cv2.contourArea(main_contour)})")
             return None
 
-        # 輪郭の外接矩形を取得して返す
-        x, y, w, h = cv2.boundingRect(main_contour)
+        return main_contour
 
-        return (x, y, w, h)
+    def _order_points(self, pts: np.ndarray) -> np.ndarray:
+        """4つの点を top-left, top-right, bottom-right, bottom-left の順に並べ替える"""
+        rect = np.zeros((4, 2), dtype="float32")
 
-    def detect_score_regions(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
-        """画像から点数表示領域を検出し、ユーザー指定のレイアウトに従って分割する"""
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)] # Top-left has smallest sum
+        rect[2] = pts[np.argmax(s)] # Bottom-right has largest sum
+
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)] # Top-right has smallest difference
+        rect[3] = pts[np.argmax(diff)] # Bottom-left has largest difference
+
+        return rect
+
+    def _four_point_transform(self, image: np.ndarray, pts: np.ndarray, dst_size: Tuple[int, int]) -> np.ndarray:
+        """4つの点と出力サイズを受け取り、画像を正面から見たように補正する"""
+        rect = self._order_points(pts)
+        (w, h) = dst_size
+
+        dst = np.array([
+            [0, 0],
+            [w - 1, 0],
+            [w - 1, h - 1],
+            [0, h - 1]], dtype="float32")
+
+        # Compute the perspective transform matrix and apply it
+        M = cv2.getPerspectiveTransform(rect, dst)
+        warped = cv2.warpPerspective(image, M, (w, h))
+
+        return warped
+
+    def detect_and_warp_screen(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """
+        画像からLCDスクリーンを検出し、傾きを補正した画像を返す。
+        """
         # 1. 全体を囲む外側フレームを検出
-        outer_frame = self._find_main_score_frame(image)
-
-        if outer_frame is None:
+        outer_frame_coords = self._find_main_score_frame(image)
+        if outer_frame_coords is None:
             print("警告: スコア表示のメインフレームを検出できませんでした。")
+            return None
+
+        x_outer, y_outer, w_outer, h_outer = outer_frame_coords
+        outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
+
+        # 2. 外側フレーム内で、内側のLCDスクリーンの輪郭情報を取得
+        contour = self._find_inner_lcd_screen_contour(outer_frame_img)
+        if contour is None:
+            print("警告: 内側のLCDスクリーンを検出できませんでした。")
+            return None
+
+        # 3. 最小外接矩形の情報を取得
+        rect = cv2.minAreaRect(contour)
+        box = cv2.boxPoints(rect)
+
+        # 座標を絶対座標に変換
+        box_abs = np.intp(box + (x_outer, y_outer))
+
+        # 出力画像のサイズを決定 (width, height)
+        (w, h) = rect[1]
+        # ランドスケープモードを維持
+        if w < h:
+            (w, h) = (h, w)
+
+        # 4. 検出した四隅を元に、傾きを補正した画像を取得
+        warped_screen = self._four_point_transform(image, box_abs, (int(w), int(h)))
+
+        return warped_screen
+
+    def split_screen_into_regions(self, screen_image: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        補正済みのスクリーン画像を4つのプレイヤー領域に分割し、
+        それぞれの領域の画像を辞書で返す。
+        """
+        if screen_image is None or screen_image.size == 0:
             return {}
 
-        x_outer, y_outer, w_outer, h_outer = outer_frame
+        h, w = screen_image.shape[:2]
 
-        # 2. 外側フレーム内で、内側のLCDスクリーンを検出
-        outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
-        inner_lcd_rel = self._find_inner_lcd_screen(outer_frame_img)
-
-        if inner_lcd_rel is None:
-            print("警告: 内側のLCDスクリーンを検出できませんでした。外側フレームをそのまま使用します。")
-            # フェイルセーフ: 内側が見つからなければ外側をそのまま使う
-            x, y, w, h = x_outer, y_outer, w_outer, h_outer
-        else:
-            # 座標を絶対座標に変換
-            x_inner_rel, y_inner_rel, w_inner, h_inner = inner_lcd_rel
-            x, y, w, h = (x_outer + x_inner_rel, y_outer + y_inner_rel, w_inner, h_inner)
-
-        # 3. 検出された領域を新しいレイアウトで分割
-        # 3.1 水平に2:3:2の比率で分割
+        # 水平に2:3:2の比率で分割
         total_parts = 7
         part_w = w / total_parts
+        x1_split = int(2 * part_w)
+        x2_split = int(5 * part_w)
 
-        x1_split = x + int(2 * part_w)
-        x2_split = x + int(5 * part_w) # 2+3=5
+        # 領域を定義
+        left_img = screen_image[:, 0:x1_split]
+        middle_img = screen_image[:, x1_split:x2_split]
+        right_img = screen_image[:, x2_split:w]
 
-        left_region = (x, y, x1_split, y + h)
-        middle_region_base = (x1_split, y, x2_split, y + h)
-        right_region = (x2_split, y, x + w, y + h) # 端数が出ないように最後は x + w まで
+        # 中央の領域を垂直に2分割
+        mid_h = middle_img.shape[0] // 2
+        middle_top_img = middle_img[0:mid_h, :]
+        middle_bottom_img = middle_img[mid_h:, :]
 
-        # 3.2 中央の領域を垂直に2分割
-        mid_x1, mid_y1, mid_x2, mid_y2 = middle_region_base
-        middle_top_region = (mid_x1, mid_y1, mid_x2, mid_y1 + (mid_y2 - mid_y1) // 2)
-        middle_bottom_region = (mid_x1, mid_y1 + (mid_y2 - mid_y1) // 2, mid_x2, mid_y2)
-
-        # 4. プレイヤー名を割り当て
         regions = {
-            '上家': left_region,
-            '対面': middle_top_region,
-            '自分': middle_bottom_region,
-            '下家': right_region
+            '上家': left_img,
+            '対面': middle_top_img,
+            '自分': middle_bottom_img,
+            '下家': right_img
         }
 
         return regions
-    
-    def extract_score_region(self, image: np.ndarray, region: Tuple[int, int, int, int]) -> np.ndarray:
-        """指定された領域を切り出し"""
-        x1, y1, x2, y2 = region
-        return image[y1:y2, x1:x2]
     
     def read_score_from_region(self, region_image: np.ndarray, player: str) -> Optional[int]:
         """指定された領域から点数を読み取り"""
@@ -243,22 +288,19 @@ class ScoreImageProcessor:
     
     def process_score_image(self, image_path: str) -> Dict[str, int]:
         """画像から全プレイヤーの点数を読み取り"""
-        # 画像読み込み
         image = cv2.imread(image_path)
         if image is None:
             raise ValueError(f"画像を読み込めませんでした: {image_path}")
         
-        # 点数表示領域の検出
-        regions = self.detect_score_regions(image)
+        warped_screen = self.detect_and_warp_screen(image)
+        if warped_screen is None:
+            return {}
+
+        region_images = self.split_screen_into_regions(warped_screen)
         
-        # 各プレイヤーの点数を読み取り
         scores = {}
-        for player, region in regions.items():
-            # 検出された領域を元のカラー画像から切り出す
-            region_image = self.extract_score_region(image, region)
-            # 領域内の画像をOCRで読み取り
+        for player, region_image in region_images.items():
             score = self.read_score_from_region(region_image, player)
-            
             if score is not None:
                 scores[player] = score
             else:
@@ -268,24 +310,20 @@ class ScoreImageProcessor:
     
     def process_uploaded_image(self, uploaded_file) -> Dict[str, int]:
         """Streamlitでアップロードされた画像を処理"""
-        # アップロードされたファイルをOpenCV形式に変換
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        
         if image is None:
             raise ValueError("アップロードされた画像を読み込めませんでした")
         
-        # 点数表示領域の検出
-        regions = self.detect_score_regions(image)
+        warped_screen = self.detect_and_warp_screen(image)
+        if warped_screen is None:
+            return {}
+
+        region_images = self.split_screen_into_regions(warped_screen)
         
-        # 各プレイヤーの点数を読み取り
         scores = {}
-        for player, region in regions.items():
-            # 検出された領域を元のカラー画像から切り出す
-            region_image = self.extract_score_region(image, region)
-            # 領域内の画像をOCRで読み取り
+        for player, region_image in region_images.items():
             score = self.read_score_from_region(region_image, player)
-            
             if score is not None:
                 scores[player] = score
             else:
@@ -293,17 +331,52 @@ class ScoreImageProcessor:
         
         return scores
     
-    def debug_detection(self, image: np.ndarray) -> Tuple[np.ndarray, List[Tuple[int, int, int, int]]]:
-        """デバッグ用：検出された領域を可視化"""
+    def debug_detection(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """デバッグ用：検出された領域と補正後のスクリーンを可視化"""
         debug_image = image.copy()
-        regions = self.detect_score_regions(image)
         
-        # 検出された領域を描画
-        for player, (x1, y1, x2, y2) in regions.items():
-            cv2.rectangle(debug_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(debug_image, player, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        # 元の画像に検出したスクリーン領域の輪郭を描画
+        outer_frame_coords = self._find_main_score_frame(image)
+        if outer_frame_coords:
+            x_outer, y_outer, w_outer, h_outer = outer_frame_coords
+            outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
+            inner_lcd_corners_rel = self._find_inner_lcd_screen(outer_frame_img)
+
+            if inner_lcd_corners_rel is not None:
+                inner_lcd_corners_abs = inner_lcd_corners_rel + (x_outer, y_outer)
+                cv2.drawContours(debug_image, [inner_lcd_corners_abs], -1, (0, 255, 0), 2)
+
+        # 補正後のスクリーン画像を取得
+        warped_screen = self.detect_and_warp_screen(image)
+        if warped_screen is None:
+            # 失敗した場合は元の画像にテキストを描画
+            cv2.putText(debug_image, "Screen not found", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            return debug_image
+
+        # 補正後の画像に分割線を描画
+        h, w = warped_screen.shape[:2]
+        total_parts = 7
+        part_w = w / total_parts
+        x1_split = int(2 * part_w)
+        x2_split = int(5 * part_w)
+        cv2.line(warped_screen, (x1_split, 0), (x1_split, h), (0, 0, 255), 1)
+        cv2.line(warped_screen, (x2_split, 0), (x2_split, h), (0, 0, 255), 1)
+
+        mid_w = x2_split - x1_split
+        mid_h = h // 2
+        cv2.line(warped_screen, (x1_split, mid_h), (x2_split, mid_h), (0, 0, 255), 1)
+
+        # 2つの画像を結合して表示
+        h1, w1 = debug_image.shape[:2]
+        h2, w2 = warped_screen.shape[:2]
+        combined_height = h1 + h2
+        combined_width = max(w1, w2)
+
+        combined_image = np.zeros((combined_height, combined_width, 3), dtype=np.uint8)
+        combined_image[0:h1, 0:w1] = debug_image
+        combined_image[h1:h1+h2, 0:w2] = warped_screen
         
-        return debug_image, list(regions.values())
+        return combined_image
 
     def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
         """
