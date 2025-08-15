@@ -329,20 +329,42 @@ class ScoreImageProcessor:
             cv2.rectangle(main_frame_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
         debug_bundle['main_frame'] = main_frame_img
 
-        # 4. 内側LCD検出用の閾値画像
+        # 4. 内側LCD検出用の連結成分解析の可視化
+        inner_lcd_debug_img = original_image.copy()
         outer_frame = self._find_main_score_frame(image)
         if outer_frame:
             x_outer, y_outer, w_outer, h_outer = outer_frame
             outer_frame_img_cropped = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
 
-            hsv_cropped = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2HSV)
-            lower_light_blue = np.array([90, 50, 100])
-            upper_light_blue = np.array([130, 255, 255])
-            mask_cropped = cv2.inRange(hsv_cropped, lower_light_blue, upper_light_blue)
-            debug_bundle['inner_lcd_color_mask'] = mask_cropped
+            # 色マスク作成
+            hsv = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2HSV)
+            lower_lcd_color = np.array([0, 0, 100])
+            upper_lcd_color = np.array([180, 80, 255])
+            mask = cv2.inRange(hsv, lower_lcd_color, upper_lcd_color)
 
-        # 5. 検出された内側LCDスクリーン
-        inner_lcd_img = main_frame_img.copy() # メインフレームが描画された画像から開始
+            # 連結成分を解析
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
+
+            # 各連結成分を色付けして可視化
+            if num_labels > 1:
+                # 背景を除いたラベルにランダムな色を割り当て
+                colors = np.random.randint(0, 255, size=(num_labels, 3), dtype=np.uint8)
+                colors[0] = [0, 0, 0] # 背景は黒
+                colored_labels = colors[labels]
+                # 元画像とブレンドして見やすくする
+                inner_lcd_debug_img[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer] = cv2.addWeighted(outer_frame_img_cropped, 0.6, colored_labels.astype(np.uint8), 0.4, 0)
+
+            # 最終的なバウンディングボックスを描画
+            inner_lcd_rel = self._find_inner_lcd_screen(outer_frame_img_cropped)
+            if inner_lcd_rel:
+                x_rel, y_rel, w_rel, h_rel = inner_lcd_rel
+                cv2.rectangle(inner_lcd_debug_img, (x_outer + x_rel, y_outer + y_rel), (x_outer + x_rel + w_rel, y_outer + y_rel + h_rel), (0, 255, 255), 2) # 黄色
+
+        debug_bundle['inner_lcd_components'] = inner_lcd_debug_img
+
+
+        # 5. 検出された内側LCDスクリーン (削除)
+        # inner_lcd_img = main_frame_img.copy() # メインフレームが描画された画像から開始
         outer_frame = self._find_main_score_frame(image)
         if outer_frame:
             x_outer, y_outer, w_outer, h_outer = outer_frame
