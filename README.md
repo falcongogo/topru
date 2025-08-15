@@ -12,6 +12,28 @@
 
 ## インストール
 
+### 1. Tesseract OCRのインストール
+
+本ツールの画像認識機能は、GoogleのOCRエンジンであるTesseractを使用しています。
+事前に、お使いの環境にTesseractをインストールしてください。
+
+- **Ubuntu/Debian**
+  ```bash
+  sudo apt-get update
+  sudo apt-get install tesseract-ocr
+  ```
+
+- **macOS** (Homebrewを使用)
+  ```bash
+  brew install tesseract
+  ```
+
+- **Windows**
+  - [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki) からインストーラーをダウンロードしてインストールしてください。
+  - インストール時に、**"Add Tesseract to system PATH"** のようなオプションにチェックを入れることを推奨します。PATHが通っていない場合は、別途システム環境変数にTesseractのインストール先を追加する必要があります。
+
+### 2. Pythonライブラリのインストール
+
 ```bash
 pip install -r requirements.txt
 ```
