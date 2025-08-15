@@ -75,40 +75,43 @@ class ScoreImageProcessor:
         return (x, y, w, h)
 
     def _find_inner_lcd_screen(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """画像領域内から、明るく彩度の低いLCDスクリーン領域を見つける"""
-        # HSV色空間に変換
+        """画像領域内から、連結成分解析を用いてLCDスクリーン領域を見つける"""
+        # HSV色空間に変換し、カラーマスクを作成
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-        # 明るく彩度の低い色のHSV範囲を定義（汎用性を高める）
         lower_lcd_color = np.array([0, 0, 100])
         upper_lcd_color = np.array([180, 80, 255])
-
-        # マスクを作成
         mask = cv2.inRange(hsv, lower_lcd_color, upper_lcd_color)
 
-        # マスク内の文字による穴を埋めるための強力な形態学的処理
-        # 横長のカーネルで、横方向の文字の隙間を積極的に埋める
-        dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 5))
-        dilated_mask = cv2.dilate(mask, dilate_kernel, iterations=2)
+        # 連結成分を解析
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
 
-        # 全体の形を元に戻すための収縮処理
-        erode_kernel = np.ones((5,5), np.uint8)
-        eroded_mask = cv2.erode(dilated_mask, erode_kernel, iterations=1)
-
-        # 輪郭を検出
-        contours, _ = cv2.findContours(eroded_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        if not contours:
+        if num_labels < 2:
             return None
 
-        # 最も面積の大きい輪郭がLCDスクリーンであると想定
-        main_contour = max(contours, key=cv2.contourArea)
+        # 0番目は背景なので無視する。
+        # 小さすぎるノイズを除外し、妥当なサイズの連結成分（文字など）のみを対象とする
+        min_component_area = 50
+        valid_components = []
+        for i in range(1, num_labels):
+            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
+                x = stats[i, cv2.CC_STAT_LEFT]
+                y = stats[i, cv2.CC_STAT_TOP]
+                w = stats[i, cv2.CC_STAT_WIDTH]
+                h = stats[i, cv2.CC_STAT_HEIGHT]
+                valid_components.append((x, y, x + w, y + h))
 
-        # 輪郭の面積が画像の面積に対して小さすぎる場合は除外（ノイズ対策）
-        if cv2.contourArea(main_contour) < 0.1 * image.shape[0] * image.shape[1]:
+        if not valid_components:
             return None
 
-        return cv2.boundingRect(main_contour)
+        # 全ての妥当な連結成分を包含する最小のバウンディングボックスを計算
+        all_x = [c[0] for c in valid_components] + [c[2] for c in valid_components]
+        all_y = [c[1] for c in valid_components] + [c[3] for c in valid_components]
+
+        min_x, min_y = min(all_x), min(all_y)
+        max_x, max_y = max(all_x), max(all_y)
+
+        # バウンディングボックスとして返す (x, y, w, h)
+        return (min_x, min_y, max_x - min_x, max_y - min_y)
 
     def detect_score_regions(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
         """画像から点数表示領域を検出し、ユーザー指定のレイアウトに従って分割する"""
