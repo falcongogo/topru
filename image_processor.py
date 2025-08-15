@@ -39,9 +39,9 @@ class ScoreImageProcessor:
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # 白色の範囲を定義 (低彩度・高明度) - パラメータを緩和
+        # 白色の範囲を定義 (低彩度・高輝度)
         lower_white = np.array([0, 0, 180])
-        upper_white = np.array([180, 70, 255])
+        upper_white = np.array([180, 50, 255])
         
         # マスクを作成
         mask = cv2.inRange(hsv, lower_white, upper_white)
@@ -68,7 +68,7 @@ class ScoreImageProcessor:
         contour_area = w * h
 
         # あまりに小さい、または大きすぎる領域は除外
-        if not (img_area * 0.1 < contour_area < img_area * 0.9):
+        if not (img_area * 0.03 < contour_area < img_area * 0.9):
             print(f"警告: 検出されたメイン領域のサイズが不適切です (画像全体の{contour_area/img_area:.1%})")
             return None
 
