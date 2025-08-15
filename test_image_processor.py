@@ -30,11 +30,11 @@ class TestImageProcessorDefinitive(unittest.TestCase):
         font = cv2.FONT_HERSHEY_SIMPLEX
         x, y, w, h = self.inner_lcd_coords[0], self.inner_lcd_coords[1], self.inner_lcd_coords[2]-self.inner_lcd_coords[0], self.inner_lcd_coords[3]-self.inner_lcd_coords[1]
 
-        # 領域を定義
-        region_w = w // 3
-        left_x = x
-        middle_x = x + region_w
-        right_x = x + 2 * region_w
+        # 領域を定義 (2:3:2の比率)
+        total_parts = 7
+        part_w = w / total_parts
+        x1_split = x + int(2 * part_w)
+        x2_split = x + int(5 * part_w)
 
         mid_h = h // 2
         top_y = y
@@ -42,10 +42,10 @@ class TestImageProcessorDefinitive(unittest.TestCase):
 
         # 各プレイヤーのテキスト位置
         positions = {
-            '上家': (left_x + 30, top_y + mid_h),
-            '対面': (middle_x + 30, top_y + mid_h // 2 + 10),
-            '自分': (middle_x + 30, bottom_y + mid_h // 2 + 10),
-            '下家': (right_x + 30, top_y + mid_h)
+            '上家': (x + 30, top_y + mid_h),
+            '対面': (x1_split + 30, top_y + mid_h // 2 + 10),
+            '自分': (x1_split + 30, bottom_y + mid_h // 2 + 10),
+            '下家': (x2_split + 30, top_y + mid_h)
         }
 
         for player, pos in positions.items():
@@ -69,12 +69,14 @@ class TestImageProcessorDefinitive(unittest.TestCase):
         me_region = detected_regions['自分']
         lcd_x, lcd_y, lcd_w, lcd_h = self.inner_lcd_coords[0], self.inner_lcd_coords[1], self.inner_lcd_coords[2]-self.inner_lcd_coords[0], self.inner_lcd_coords[3]-self.inner_lcd_coords[1]
 
-        # X座標が中央1/3の範囲内か
-        self.assertTrue(lcd_x + lcd_w // 3 < me_region[0] < lcd_x + 2 * lcd_w // 3)
+        # X座標が中央の領域(2/7 ~ 5/7)にあるかチェック
+        x1_split = lcd_x + int(2 * lcd_w / 7)
+        x2_split = lcd_x + int(5 * lcd_w / 7)
+        self.assertTrue(x1_split <= me_region[0] < x2_split)
         # Y座標が下半分か (境界を含むように >= に修正)
         self.assertGreaterEqual(me_region[1], lcd_y + lcd_h // 2)
 
-    @unittest.skip("This E2E test is fragile and fails on the synthetic image due to OCR pre-processing issues that are difficult to debug without visual inspection. The core region detection is tested successfully in test_detect_and_assign_regions.")
+    @unittest.skip("This E2E test is fragile and fails consistently due to OCR issues on the synthetic image. The underlying region detection and assignment logic is validated by test_detect_and_assign_regions.")
     def test_full_process_with_distractors(self):
         """点差などのノイズを含む画像からのE2Eテスト"""
         # pytesseractをモック化せず、実際のOCRエンジンでテスト
