@@ -311,7 +311,18 @@ class ScoreImageProcessor:
             cv2.rectangle(main_frame_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
         debug_bundle['main_frame'] = main_frame_img
 
-        # 4. 検出された内側LCDスクリーン
+        # 4. 内側LCD検出用の閾値画像
+        outer_frame = self._find_main_score_frame(image)
+        if outer_frame:
+            x_outer, y_outer, w_outer, h_outer = outer_frame
+            outer_frame_img_cropped = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
+
+            gray_cropped = cv2.cvtColor(outer_frame_img_cropped, cv2.COLOR_BGR2GRAY)
+            blurred_cropped = cv2.GaussianBlur(gray_cropped, (5, 5), 0)
+            _, thresh_cropped = cv2.threshold(blurred_cropped, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            debug_bundle['inner_lcd_threshold'] = thresh_cropped
+
+        # 5. 検出された内側LCDスクリーン
         inner_lcd_img = main_frame_img.copy() # メインフレームが描画された画像から開始
         outer_frame = self._find_main_score_frame(image)
         if outer_frame:
