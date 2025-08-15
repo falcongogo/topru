@@ -39,9 +39,9 @@ class ScoreImageProcessor:
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # 白色の範囲を定義 (低彩度・高明度)
-        lower_white = np.array([0, 0, 200])
-        upper_white = np.array([180, 50, 255])
+        # 白色の範囲を定義 (低彩度・高明度) - パラメータを緩和
+        lower_white = np.array([0, 0, 180])
+        upper_white = np.array([180, 70, 255])
         
         # マスクを作成
         mask = cv2.inRange(hsv, lower_white, upper_white)
@@ -65,11 +65,11 @@ class ScoreImageProcessor:
                 area = w * h
                 aspect_ratio = w / h if h > 0 else 0
 
-                # スコア表示領域らしいかどうかの条件
-                # 面積: 画像全体の1%～15%
-                # アスペクト比: 2.0～8.0 (横長)
-                is_candidate = (img_area * 0.01 < area < img_area * 0.15 and
-                                2.0 < aspect_ratio < 8.0)
+                # スコア表示領域らしいかどうかの条件 (パラメータを緩和)
+                # 面積: 画像全体の0.5%～20%
+                # アスペクト比: 1.5～10.0 (横長)
+                is_candidate = (img_area * 0.005 < area < img_area * 0.20 and
+                                1.5 < aspect_ratio < 10.0)
 
                 if is_candidate:
                     candidate_rects.append((x, y, x + w, y + h))

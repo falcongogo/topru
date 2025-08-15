@@ -94,7 +94,7 @@ def render_image_upload_section() -> Dict[str, int]:
     
     if uploaded_file is not None:
         # 画像プレビュー
-        st.image(uploaded_file, caption="アップロードされた画像", use_column_width=True)
+        st.image(uploaded_file, caption="アップロードされた画像", use_container_width=True)
         
         # デバッグモードの切り替え
         debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=False)
@@ -123,7 +123,7 @@ def render_image_upload_section() -> Dict[str, int]:
                         
                         if debug_result:
                             debug_image, regions = debug_result
-                            st.image(debug_image, caption="検出された領域（緑の枠）", use_column_width=True)
+                            st.image(debug_image, caption="検出された領域（緑の枠）", use_container_width=True)
                             
                             if regions:
                                 st.info(f"検出された領域数: {len(regions)}")
@@ -255,15 +255,6 @@ def display_top_difference(top_diff: int, leader: str) -> None:
 def main():
     """メインアプリケーション"""
     st.set_page_config(page_title='TOPる', page_icon='🀄', layout='wide')
-    # lang属性をjaに設定
-    st.markdown(
-        """
-        <script>
-            document.documentElement.lang = 'ja';
-        </script>
-        """,
-        unsafe_allow_html=True,
-    )
     st.title('TOPる – 麻雀オーラス逆転条件計算ツール')
     
     # セッション状態の初期化
