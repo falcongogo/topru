@@ -8,7 +8,7 @@ def main():
     """
     # テスト画像のパスを指定
     # 他の画像で試す場合はここを変更する
-    image_path = "test_data/test2.jpg"
+    image_path = "test_data/test3.jpg"
     print(f"--- テスト実行: {image_path} ---")
 
     try:
