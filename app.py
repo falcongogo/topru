@@ -80,75 +80,89 @@ def render_image_upload_section() -> Dict[str, int]:
     """画像アップロードセクションの描画"""
     st.subheader('📷 スリムスコア28S画像から自動入力')
     
+    # セッションステートの初期化
+    if 'last_uploaded_file_id' not in st.session_state:
+        st.session_state.last_uploaded_file_id = None
+
     uploaded_file = st.file_uploader(
         "スリムスコア28Sの点数表示画像をアップロードしてください",
         type=['png', 'jpg', 'jpeg'],
         help="スマホで撮影したスリムスコア28Sの点数表示画像をアップロードすると、自動的に点数を読み取ります"
     )
     
-    scores = {}
-    
     if uploaded_file is not None:
+        # 新しいファイルがアップロードされた場合、自動でOCRを実行
+        if uploaded_file.file_id != st.session_state.last_uploaded_file_id:
+            with st.spinner('画像を処理中...'):
+                scores = process_uploaded_image(uploaded_file)
+
+            if scores:
+                st.success(f"点数を読み取りました: {scores}")
+                st.session_state.scores = scores
+            else:
+                st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
+
+            # 処理済みのファイルIDを保存し、画面を再実行してUIに反映
+            st.session_state.last_uploaded_file_id = uploaded_file.file_id
+            st.rerun()
+
+        # --- ここから下の部分は、ファイルがアップロードされている場合に常に表示 ---
+
         # 画像プレビュー
-        st.image(uploaded_file, caption="アップロードされた画像", use_container_width=True)
+        st.image(uploaded_file, caption="アップロードされた画像", width=300)
         
         # デバッグモードの切り替え
         debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=True)
         
-        # 画像処理ボタン
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button('🔍 画像から点数を読み取り', type='secondary'):
-                with st.spinner('画像を処理中...'):
-                    scores = process_uploaded_image(uploaded_file)
-                
-                if scores:
-                    st.success(f"点数を読み取りました: {scores}")
-                    # セッション状態に保存
-                    st.session_state.scores = scores
+        # デバッグモードの場合、詳細な途中経過を自動表示
+        if debug_mode:
+            st.markdown("---")
+            st.subheader("🛠️ デバッグ情報")
+
+            # セッションステートにデバッグ情報がなければ生成
+            if 'debug_bundle' not in st.session_state or st.session_state.last_uploaded_file_id != uploaded_file.file_id:
+                uploaded_file.seek(0)
+                with st.spinner('詳細デバッグ情報を生成中...'):
+                    st.session_state.debug_bundle = process_uploaded_image_full_debug(uploaded_file)
+
+            debug_bundle = st.session_state.get('debug_bundle')
+
+            if debug_bundle:
+                # 処理の経過を順に表示
+                if 'main_frame' in debug_bundle:
+                    st.image(debug_bundle['main_frame'], caption="1. メインフレーム検出", use_container_width=True, channels="BGR")
+
+                if 'warped_screen' in debug_bundle:
+                    st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
+
+                if 'split_regions' in debug_bundle and debug_bundle['split_regions']:
+                    st.markdown("##### 3. 各プレイヤー領域への分割")
+                    cols = st.columns(len(debug_bundle['split_regions']))
+                    # 順番を '上家', '対面', '自分', '下家' に固定
+                    for i, player in enumerate(['上家', '対面', '自分', '下家']):
+                        if player in debug_bundle['split_regions']:
+                             with cols[i]:
+                                st.write(player)
+                                img = debug_bundle['split_regions'][player]
+                                st.image(img, caption=f"{player}領域", use_container_width=True, channels="BGR")
+
+                if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
+                    st.markdown("##### 4. OCR直前の二値化画像")
+                    cols = st.columns(len(debug_bundle['pre_ocr_images']))
+                    # 順番を '上家', '対面', '自分', '下家' に固定
+                    for i, player in enumerate(['上家', '対面', '自分', '下家']):
+                         if player in debug_bundle['pre_ocr_images']:
+                            with cols[i]:
+                                st.write(player)
+                                img = debug_bundle['pre_ocr_images'][player]
+                                st.image(img, caption=f"{player}への入力画像", use_container_width=True)
                 else:
-                    st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
-        
-        # デバッグモードの場合、詳細な途中経過を表示
-        if debug_mode and uploaded_file is not None:
-            with col2:
-                if st.button('🔧 詳細デバッグ情報を表示', type='secondary'):
-                    # ユーザーが再度アップロードしなくてもいいように、ファイルポインタをリセット
-                    uploaded_file.seek(0)
-                    with st.spinner('詳細デバッグ情報を生成中...'):
-                        debug_bundle = process_uploaded_image_full_debug(uploaded_file)
-
-                    if debug_bundle:
-                        st.subheader("🛠️ デバッグ情報")
-
-                        if 'hsv_mask' in debug_bundle:
-                            st.image(debug_bundle['hsv_mask'], caption="1. HSVカラーマスク (白・灰色領域)", use_container_width=True)
-                        
-                        if 'all_candidates' in debug_bundle:
-                            st.image(debug_bundle['all_candidates'], caption="2. 検出された全候補領域 (赤枠)", use_container_width=True, channels="BGR")
-
-                        if 'top_four' in debug_bundle:
-                            st.image(debug_bundle['top_four'], caption="3. 上位4つの候補領域 (青枠)", use_container_width=True, channels="BGR")
-
-                        if 'inner_lcd_components' in debug_bundle:
-                            st.image(debug_bundle['inner_lcd_components'], caption="4. 内側LCDの連結成分と最終領域（黄色枠）", use_container_width=True, channels="BGR")
-
-                        if 'final_assignments' in debug_bundle:
-                            st.image(debug_bundle['final_assignments'], caption="5. 最終的なプレイヤー割り当て (緑枠)", use_container_width=True, channels="BGR")
-
-                        if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                            st.markdown("---")
-                            st.markdown("##### OCR直前の画像（各プレイヤー）")
-                            ocr_cols = st.columns(len(debug_bundle['pre_ocr_images']))
-                            for i, (player, img) in enumerate(debug_bundle['pre_ocr_images'].items()):
-                                with ocr_cols[i]:
-                                    st.write(player)
-                                    st.image(img, caption=f"{player}への入力画像", use_container_width=True)
-                        else:
-                            st.warning("OCR対象の画像を生成できませんでした。")
+                    st.warning("OCR対象の画像を生成できませんでした。")
+            else:
+                st.warning("デバッグ情報を生成できませんでした。")
     
-    return scores
+    # セッションステートからスコアを返す
+    return st.session_state.get('scores', {})
 
 def validate_inputs(scores: Dict[str, int], tsumibo: int, kyotaku: int) -> bool:
     """入力値の検証"""
