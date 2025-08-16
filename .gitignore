@@ -152,3 +152,4 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+debug_binary.png
