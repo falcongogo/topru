@@ -155,9 +155,10 @@ class ScoreImageProcessor:
 
         return warped
 
-    def _split_digits(self, image: np.ndarray) -> List[np.ndarray]:
+    def _split_digits(self, image: np.ndarray) -> List[Tuple[Tuple[int, int, int, int], np.ndarray]]:
         """
-        スコア表示領域の画像から、輪郭検出を用いて5つの数字領域を分割する。
+        スコア表示領域の画像から輪郭検出を用いて5つの数字領域を分割し、
+        それぞれの外接矩形と輪郭のペアリストを返す。
         """
         # 数字同士の連結を断ち切るために収縮処理を行う
         kernel = np.ones((3,3),np.uint8)
@@ -166,9 +167,24 @@ class ScoreImageProcessor:
         # 輪郭を検出
         contours, _ = cv2.findContours(eroded_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # 輪郭を面積でフィルタリングして、小さすぎるノイズを除去
+        # 輪郭を面積とアスペクト比でフィルタリング
         min_contour_area = (image.shape[0] * image.shape[1]) * 0.01
-        digit_contours = [c for c in contours if cv2.contourArea(c) > min_contour_area]
+        digit_contours = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+
+            # 面積が小さすぎるものは除外
+            if cv2.contourArea(c) < min_contour_area:
+                continue
+
+            # アスペクト比が数字らしくないものは除外 (細長すぎる、または平たすぎる)
+            if w == 0 or h == 0:
+                continue
+            aspect_ratio = h / w
+            if not (1.2 < aspect_ratio < 4.0):
+                continue
+
+            digit_contours.append(c)
 
         # 5桁見つからない場合はエラー
         if len(digit_contours) != self.expected_digits:
@@ -176,18 +192,41 @@ class ScoreImageProcessor:
             return []
 
         # 輪郭をX座標でソート
-        # get a list of bounding box coordinates
         bounding_boxes = [cv2.boundingRect(c) for c in digit_contours]
-        # sort the contours by their x-coordinate
-        sorted_contours = sorted(zip(bounding_boxes, digit_contours), key=lambda b: b[0][0])
+        sorted_contours_with_boxes = sorted(zip(bounding_boxes, digit_contours), key=lambda b: b[0][0])
 
-        digits = []
-        for (x, y, w, h), contour in sorted_contours:
-            digit_img = image[y:y+h, x:x+w]
-            if digit_img.size > 0:
-                digits.append(digit_img)
+        return sorted_contours_with_boxes
 
-        return digits
+    def _deskew_digit(self, digit_image: np.ndarray, contour: np.ndarray) -> np.ndarray:
+        """
+        輪郭情報を用いて、傾いた単一の数字画像をまっすぐに補正する。
+        画像は既に切り出されていること、輪郭座標は切り出された画像に
+        対する相対座標であることを前提とする。
+        """
+        # 輪郭から最小面積の矩形を取得
+        rect = cv2.minAreaRect(contour)
+
+        # 矩形の角度を取得
+        angle = rect[2]
+
+        # OpenCVの角度の仕様に合わせて調整 (-90から0の範囲)
+        # 角度が-45度より小さい場合、矩形が90度回転しているとみなし補正
+        if angle < -45:
+            angle += 90
+
+        # 画像の中心を回転の中心に設定
+        (h, w) = digit_image.shape[:2]
+        center = (w // 2, h // 2)
+
+        # 回転行列を計算
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+
+        # アフィン変換を適用して画像を回転
+        # 背景は黒(0)、文字は白(255)の二値化画像を想定しているため、
+        # ボーダー（画像の外部）は背景色である黒で埋める。
+        deskewed = cv2.warpAffine(digit_image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+        return deskewed
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
         """
@@ -363,23 +402,39 @@ class ScoreImageProcessor:
             blurred = cv2.GaussianBlur(resized, (3, 3), 0)
 
             enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
-            # 背景を白、文字を黒に
-            _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            # 背景を白、文字を黒に (適応的しきい値処理)
+            binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
             
             # --- DEBUG ---
             cv2.imwrite(f"debug_binary.png", binary)
             # --- END DEBUG ---
 
             # 7セグメントロジックで数字を認識
-            digit_images = self._split_digits(binary)
+            digit_contours_with_boxes = self._split_digits(binary)
             
-            if len(digit_images) != self.expected_digits:
+            if len(digit_contours_with_boxes) != self.expected_digits:
                 print(f"警告: {player}の領域から期待される桁数({self.expected_digits})の数字を切り出せませんでした。")
                 return None
 
             recognized_digits = []
-            for digit_img in digit_images:
-                digit = self._recognize_7_segment_digit(digit_img)
+            for (x, y, w, h), contour in digit_contours_with_boxes:
+                # 元の二値化画像から数字を切り出す
+                digit_img = binary[y:y+h, x:x+w]
+                if digit_img.size == 0:
+                    # 認識失敗として扱う
+                    print(f"警告: {player}の領域で空の数字画像が切り出されました。")
+                    recognized_digits.append(None)
+                    continue
+
+                # 輪郭座標を切り出した画像内の相対座標に変換
+                adjusted_contour = contour - (x, y)
+
+                # 数字の傾きを補正
+                deskewed_digit = self._deskew_digit(digit_img, adjusted_contour)
+
+                # 傾き補正した画像で数字を認識
+                digit = self._recognize_7_segment_digit(deskewed_digit)
+
                 if digit is not None:
                     recognized_digits.append(str(digit))
                 else:
