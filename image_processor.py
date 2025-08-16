@@ -159,8 +159,12 @@ class ScoreImageProcessor:
         """
         スコア表示領域の画像から、輪郭検出を用いて5つの数字領域を分割する。
         """
+        # 数字同士の連結を断ち切るために収縮処理を行う
+        kernel = np.ones((3,3),np.uint8)
+        eroded_image = cv2.erode(image, kernel, iterations = 1)
+
         # 輪郭を検出
-        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(eroded_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # 輪郭を面積でフィルタリングして、小さすぎるノイズを除去
         min_contour_area = (image.shape[0] * image.shape[1]) * 0.01
