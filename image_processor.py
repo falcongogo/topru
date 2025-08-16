@@ -1,21 +1,35 @@
 import cv2
 import numpy as np
 from PIL import Image
-import pytesseract
-import re
 from typing import Dict, Optional, Tuple, List, Any
 
 class ScoreImageProcessor:
     """スリムスコア28Sの点数表示を読み取るクラス"""
     
     def __init__(self):
-        # OCR設定
-        self.ocr_config = '--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789'
-        
         # 点数表示の特徴
         self.min_score = 1000
         self.max_score = 99999
         self.expected_digits = 5  # 28000のような5桁の数字
+
+        # 7セグメントディスプレイのパターン (a, b, c, d, e, f, g)
+        #   a
+        # f   b
+        #   g
+        # e   c
+        #   d
+        self.seven_segment_patterns = {
+            (True, True, True, True, True, True, False): 0,  # 0
+            (False, True, True, False, False, False, False): 1,  # 1
+            (True, True, False, True, True, False, True): 2,  # 2
+            (True, True, True, True, False, False, True): 3,  # 3
+            (False, True, True, False, False, True, True): 4,  # 4
+            (True, False, True, True, False, True, True): 5,  # 5
+            (True, False, True, True, True, True, True): 6,  # 6
+            (True, True, True, False, False, False, False): 7,  # 7
+            (True, True, True, True, True, True, True): 8,  # 8
+            (True, True, True, True, False, True, True): 9,  # 9
+        }
     
     def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """画像の前処理"""
@@ -141,6 +155,105 @@ class ScoreImageProcessor:
 
         return warped
 
+    def _split_digits(self, image: np.ndarray) -> List[np.ndarray]:
+        """
+        スコア表示領域の画像から、輪郭検出を用いて5つの数字領域を分割する。
+        """
+        # 輪郭を検出
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # 輪郭を面積でフィルタリングして、小さすぎるノイズを除去
+        min_contour_area = (image.shape[0] * image.shape[1]) * 0.01
+        digit_contours = [c for c in contours if cv2.contourArea(c) > min_contour_area]
+
+        # 5桁見つからない場合はエラー
+        if len(digit_contours) != self.expected_digits:
+            # print(f"警告: 期待される桁数({self.expected_digits})と異なる数の輪郭({len(digit_contours)})が検出されました。")
+            return []
+
+        # 輪郭をX座標でソート
+        # get a list of bounding box coordinates
+        bounding_boxes = [cv2.boundingRect(c) for c in digit_contours]
+        # sort the contours by their x-coordinate
+        sorted_contours = sorted(zip(bounding_boxes, digit_contours), key=lambda b: b[0][0])
+
+        digits = []
+        for (x, y, w, h), contour in sorted_contours:
+            digit_img = image[y:y+h, x:x+w]
+            if digit_img.size > 0:
+                digits.append(digit_img)
+
+        return digits
+
+    def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
+        """
+        単一の数字画像から7セグメントのパターンを読み取り、数字を返す。
+        画像は黒い文字(0)と白い背景(255)に二値化されていることを前提とする。
+        """
+        if digit_image is None or digit_image.size == 0:
+            return None
+
+        h, w = digit_image.shape[:2]
+        if h < 10 or w < 5: # 小さすぎる画像は処理しない
+            return None
+
+        # セグメントの中心付近の相対座標
+        # (y, x) の順で指定
+        segment_coords = {
+            'a': (h * 0.1, w * 0.5),
+            'b': (h * 0.25, w * 0.8),
+            'c': (h * 0.75, w * 0.8),
+            'd': (h * 0.9, w * 0.5),
+            'e': (h * 0.75, w * 0.2),
+            'f': (h * 0.25, w * 0.2),
+            'g': (h * 0.5, w * 0.5)
+        }
+
+        # 各セグメントがオン(白)かどうかを判定するしきい値
+        on_threshold = 128
+
+        # セグメント領域を定義 (x_start, y_start, x_end, y_end) as percentages
+        rois = {
+            'a': (0.2, 0.0, 0.8, 0.2),
+            'b': (0.7, 0.1, 1.0, 0.45),
+            'c': (0.7, 0.55, 1.0, 0.9),
+            'd': (0.2, 0.8, 0.8, 1.0),
+            'e': (0.0, 0.55, 0.3, 0.9),
+            'f': (0.0, 0.1, 0.3, 0.45),
+            'g': (0.2, 0.4, 0.8, 0.6)
+        }
+
+        def is_on(segment_roi):
+            x1, y1, x2, y2 = segment_roi
+            roi = digit_image[int(y1*h):int(y2*h), int(x1*w):int(x2*w)]
+            if roi.size == 0:
+                return False
+            # ROI内のピクセルの平均値がしきい値を超えていればオン
+            return np.mean(roi) > on_threshold
+
+        try:
+            pattern = (
+                is_on(rois['a']),
+                is_on(rois['b']),
+                is_on(rois['c']),
+                is_on(rois['d']),
+                is_on(rois['e']),
+                is_on(rois['f']),
+                is_on(rois['g'])
+            )
+        except (IndexError, ValueError):
+            return None
+
+        # --- DEBUG ---
+        # import random
+        # num = random.randint(0, 1000)
+        # cv2.imwrite(f"debug_digit_{num}.png", digit_image)
+        # print(f"Digit {num} pattern: {pattern}")
+        # --- END DEBUG ---
+
+        # 定義されたパターンに一致するか確認
+        return self.seven_segment_patterns.get(pattern)
+
     def detect_and_warp_screen(self, image: np.ndarray) -> Optional[np.ndarray]:
         """
         画像からLCDスクリーンを検出し、傾きを補正した画像を返す。
@@ -249,20 +362,34 @@ class ScoreImageProcessor:
             # 背景を白、文字を黒に
             _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
-            # OCRで文字認識
-            text = pytesseract.image_to_string(binary, config=self.ocr_config)
-            
-            # 数字のみを抽出
-            numbers = re.findall(r'\d+', text)
-            
-            if numbers:
-                # 各数字をチェック
-                for number in numbers:
-                    score = int(number)
+            # --- DEBUG ---
+            cv2.imwrite(f"debug_binary.png", binary)
+            # --- END DEBUG ---
 
-                    # 点数として妥当かチェック
-                    if self._is_valid_score(score):
-                        return score
+            # 7セグメントロジックで数字を認識
+            digit_images = self._split_digits(binary)
+            
+            if len(digit_images) != self.expected_digits:
+                print(f"警告: {player}の領域から期待される桁数({self.expected_digits})の数字を切り出せませんでした。")
+                return None
+
+            recognized_digits = []
+            for digit_img in digit_images:
+                digit = self._recognize_7_segment_digit(digit_img)
+                if digit is not None:
+                    recognized_digits.append(str(digit))
+                else:
+                    # 1桁でも認識に失敗したら、その点数は無効
+                    print(f"警告: {player}の領域で数字の一部の認識に失敗しました。")
+                    return None
+
+            if len(recognized_digits) == self.expected_digits:
+                score_str = "".join(recognized_digits)
+                score = int(score_str)
+
+                # 点数として妥当かチェック
+                if self._is_valid_score(score):
+                    return score
 
             return None
             

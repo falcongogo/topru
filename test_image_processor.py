@@ -127,5 +127,29 @@ class TestImageProcessorDefinitive(unittest.TestCase):
         finally:
             os.unlink(tmp_path)
 
+    def test_recognize_one_7_segment_digit(self):
+        """7セグメント数字単体の認識テスト(白文字・黒背景)"""
+        # Digit '1'
+        img_1 = np.full((50, 30), 0, dtype=np.uint8) # Black background
+        cv2.line(img_1, (25, 5), (25, 22), 255, 3)  # segment b (white line)
+        cv2.line(img_1, (25, 28), (25, 45), 255, 3) # segment c (white line)
+        self.assertEqual(self.processor._recognize_7_segment_digit(img_1), 1)
+
+        # Digit '8'
+        img_8 = np.full((50, 30), 0, dtype=np.uint8) # Black background
+        cv2.line(img_8, (5, 5), (25, 5), 255, 3)    # a
+        cv2.line(img_8, (25, 5), (25, 22), 255, 3)  # b
+        cv2.line(img_8, (25, 28), (25, 45), 255, 3) # c
+        cv2.line(img_8, (5, 45), (25, 45), 255, 3)  # d
+        cv2.line(img_8, (5, 28), (5, 45), 255, 3)   # e
+        cv2.line(img_8, (5, 5), (5, 22), 255, 3)    # f
+        cv2.line(img_8, (5, 25), (25, 25), 255, 3)  # g
+        self.assertEqual(self.processor._recognize_7_segment_digit(img_8), 8)
+
+        # Blank image (black background)
+        img_blank = np.full((50, 30), 0, dtype=np.uint8)
+        self.assertIsNone(self.processor._recognize_7_segment_digit(img_blank))
+
+
 if __name__ == "__main__":
     unittest.main()
