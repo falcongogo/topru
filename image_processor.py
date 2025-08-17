@@ -191,10 +191,10 @@ class ScoreImageProcessor:
             print(f"警告: ハイブリッド分割で期待される桁数({self.expected_digits})を検出できませんでした。")
             return []
 
-    def _correct_shear(self, image: np.ndarray) -> np.ndarray:
+    def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """
         ハフ変換を用いて、画像のせん断（縦方向の傾き）を補正する。
-        横棒は水平なままで、縦棒が傾いているような歪みを補正することを目的とする。
+        補正後の画像と、検出された傾き角度（度数法）を返す。
         """
         # Cannyエッジ検出
         edges = cv2.Canny(image, 50, 150, apertureSize=3)
@@ -203,7 +203,7 @@ class ScoreImageProcessor:
         lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=5)
 
         if lines is None:
-            return image
+            return image, 0.0
 
         angles = []
         for line in lines:
@@ -211,20 +211,19 @@ class ScoreImageProcessor:
             # ほぼ垂直な線のみを対象とする
             angle_rad = np.arctan2(y2 - y1, x2 - x1)
             angle_deg = abs(np.degrees(angle_rad))
-            if 75 < angle_deg < 105: # 90°±15°の範囲の線
-                # 垂直からのずれを計算
+            if 75 < angle_deg < 105:
                 deviation = angle_rad - (np.pi / 2)
                 angles.append(deviation)
 
         if not angles:
-            return image
+            return image, 0.0
 
         # ずれのヒストグラムを作成し、最頻値を求める
         counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
-        dominant_deviation = bin_edges[np.argmax(counts)]
+        dominant_deviation_rad = bin_edges[np.argmax(counts)]
 
-        # せん断係数を計算 (tan(ずれ))。マイナス符号を削除して補正方向を修正
-        shear_factor = np.tan(dominant_deviation)
+        # せん断係数を計算
+        shear_factor = np.tan(dominant_deviation_rad)
 
         # アフィン変換行列を作成
         M = np.array([
@@ -236,7 +235,10 @@ class ScoreImageProcessor:
         # せん断補正を適用
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
-        return corrected_image
+        # デバッグ用に角度を度数法で返す
+        dominant_angle_deg = np.degrees(dominant_deviation_rad)
+
+        return corrected_image, dominant_angle_deg
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
         """
@@ -434,7 +436,7 @@ class ScoreImageProcessor:
             # --- END DEBUG ---
 
             # せん断補正のみ実行し、認識処理は行わない
-            self._correct_shear(binary)
+            self._correct_shear(binary) # 戻り値の角度はここでは使わない
 
             return None # 常にNoneを返す
 
@@ -586,6 +588,7 @@ class ScoreImageProcessor:
         # 4. & 5. 各プレイヤーの二値化画像と傾き補正後画像
         pre_ocr_images = {}
         deskewed_digits_by_player = {}
+        shear_angles = {}
 
         for player, region_image in region_images.items():
             try:
@@ -607,11 +610,11 @@ class ScoreImageProcessor:
                 _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
                 kernel = np.ones((3,3), np.uint8)
                 binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-                pre_ocr_images[player] = binary
 
                 # せん断補正を適用し、その結果を保存
-                corrected_binary = self._correct_shear(binary)
+                corrected_binary, angle = self._correct_shear(binary)
                 pre_ocr_images[player] = corrected_binary
+                shear_angles[player] = angle
 
                 # 切り出しは行わないので、deskewed_digitsは空のまま
                 deskewed_digits_by_player[player] = []
@@ -621,6 +624,7 @@ class ScoreImageProcessor:
 
         debug_bundle['pre_ocr_images'] = pre_ocr_images
         debug_bundle['deskewed_digits'] = deskewed_digits_by_player
+        debug_bundle['shear_angles'] = shear_angles
 
         return debug_bundle
 
