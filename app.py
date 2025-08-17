@@ -136,22 +136,19 @@ def render_image_upload_section() -> Dict[str, int]:
                     st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
 
                 if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                    st.markdown("##### 3. 傾き補正後の二値化領域")
+                    st.markdown("##### 3. OCR前処理後の二値化画像")
                     cols = st.columns(4)
                     for i, player in enumerate(['上家', '対面', '自分', '下家']):
                          if player in debug_bundle['pre_ocr_images']:
                             with cols[i]:
                                 st.write(player)
                                 img = debug_bundle['pre_ocr_images'][player]
-                                st.image(img, caption=f"{player} 傾き補正後", use_container_width=True)
+                                st.image(img, caption=f"{player} 二値化後", use_container_width=True)
 
                 if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
-                    st.markdown("##### 4. 切り出し後の各数字画像")
+                    st.markdown("##### 4. 傾き補正後の最終入力画像")
                     for player, digits in debug_bundle['deskewed_digits'].items():
                         st.write(f"**{player}**")
-                        if not digits:
-                            st.write("（数字の切り出しに失敗）")
-                            continue
                         cols = st.columns(len(digits))
                         for i, digit_img in enumerate(digits):
                             with cols[i]:
