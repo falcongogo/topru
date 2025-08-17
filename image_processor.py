@@ -191,45 +191,51 @@ class ScoreImageProcessor:
             print(f"警告: ハイブリッド分割で期待される桁数({self.expected_digits})を検出できませんでした。")
             return []
 
-    def _deskew_digit(self, digit_image: np.ndarray, contour: np.ndarray) -> np.ndarray:
+    def _correct_shear(self, image: np.ndarray) -> np.ndarray:
         """
-        輪郭情報を用いて、傾いた単一の数字画像をまっすぐに補正する。
-        画像は既に切り出されていること、輪郭座標は切り出された画像に
-        対する相対座標であることを前提とする。
+        ハフ変換を用いて、画像のせん断（縦方向の傾き）を補正する。
+        横棒は水平なままで、縦棒が傾いているような歪みを補正することを目的とする。
         """
-        # 輪郭から最小面積の矩形を取得
-        rect = cv2.minAreaRect(contour)
+        # Cannyエッジ検出
+        edges = cv2.Canny(image, 50, 150, apertureSize=3)
 
-        # 矩形の角度を取得
-        angle = rect[2]
+        # 確率的ハフ変換で直線を検出
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=5)
 
-        # OpenCVの角度の仕様に合わせて調整 (-90から0の範囲)
-        # 角度が-45度より小さい場合、矩形が90度回転しているとみなし補正
-        if angle < -45:
-            angle += 90
+        if lines is None:
+            return image
 
-        # 画像の中心を回転の中心に設定
-        (h, w) = digit_image.shape[:2]
-        center = (w // 2, h // 2)
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            # ほぼ垂直な線のみを対象とする
+            angle_rad = np.arctan2(y2 - y1, x2 - x1)
+            angle_deg = abs(np.degrees(angle_rad))
+            if 75 < angle_deg < 105: # 90°±15°の範囲の線
+                # 垂直からのずれを計算
+                deviation = angle_rad - (np.pi / 2)
+                angles.append(deviation)
 
-        # 回転行列を計算
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        if not angles:
+            return image
 
-        # アフィン変換を適用して画像を回転
-        # 背景は黒(0)、文字は白(255)の二値化画像を想定しているため、
-        # ボーダー（画像の外部）は背景色である黒で埋める。
-        deskewed = cv2.warpAffine(digit_image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        # ずれのメディアンを計算
+        median_deviation = np.median(angles)
 
-        # 回転後の画像で再度輪郭を見つけてタイトにクロップする
-        contours, _ = cv2.findContours(deskewed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            final_contour = max(contours, key=cv2.contourArea)
-            x_b, y_b, w_b, h_b = cv2.boundingRect(final_contour)
-            cropped_deskewed = deskewed[y_b:y_b+h_b, x_b:x_b+w_b]
-            return cropped_deskewed
+        # せん断係数を計算 (tan(ずれ))
+        shear_factor = -np.tan(median_deviation)
 
-        # 輪郭が見つからなければ、元の補正画像を返す
-        return deskewed
+        # アフィン変換行列を作成
+        M = np.array([
+            [1, shear_factor, 0],
+            [0, 1, 0]
+        ], dtype=np.float32)
+
+        (h, w) = image.shape[:2]
+        # せん断補正を適用
+        corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+        return corrected_image
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
         """
@@ -423,7 +429,11 @@ class ScoreImageProcessor:
             # --- END DEBUG ---
 
             # 7セグメントロジックで数字を認識
-            digit_data = self._split_digits(binary)
+            # 1. 領域全体のせん断を補正
+            corrected_binary = self._correct_shear(binary)
+
+            # 2. 補正後の画像から数字を切り出し
+            digit_data = self._split_digits(corrected_binary)
 
             if len(digit_data) != self.expected_digits:
                 # print(f"警告: {player}の領域から期待される桁数({self.expected_digits})の数字を切り出せませんでした。")
@@ -431,10 +441,8 @@ class ScoreImageProcessor:
 
             recognized_digits = []
             for digit_slice, digit_contour in digit_data:
-                # 傾きを補正
-                deskewed_digit = self._deskew_digit(digit_slice, digit_contour)
-                # 認識
-                digit = self._recognize_7_segment_digit(deskewed_digit)
+                # 3. 数字を認識 (個別の傾き補正は不要)
+                digit = self._recognize_7_segment_digit(digit_slice)
 
                 if digit is not None:
                     recognized_digits.append(str(digit))
@@ -628,15 +636,15 @@ class ScoreImageProcessor:
                 binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
                 pre_ocr_images[player] = binary
 
-                # ハイブリッド分割と傾き補正
-                digit_data = self._split_digits(binary)
+                # せん断補正と分割
+                corrected_binary = self._correct_shear(binary)
+                pre_ocr_images[player] = corrected_binary # せん断補正後の画像を保存
+
+                digit_data = self._split_digits(corrected_binary)
                 if not digit_data: continue
 
-                deskewed_for_player = []
-                for digit_slice, digit_contour in digit_data:
-                    deskewed_digit = self._deskew_digit(digit_slice, digit_contour)
-                    deskewed_for_player.append(deskewed_digit)
-                deskewed_digits_by_player[player] = deskewed_for_player
+                # 切り出した画像をそのまま保存
+                deskewed_digits_by_player[player] = [digit_slice for digit_slice, _ in digit_data]
 
             except Exception as e:
                 print(f"デバッグ情報生成中にエラー: {player} - {e}")
