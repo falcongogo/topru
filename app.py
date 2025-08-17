@@ -6,6 +6,7 @@ from typing import Dict, Any
 import tempfile
 import os
 import cv2
+from PIL import Image
 
 # 定数定義
 PLAYERS = ['自分', '下家', '対面', '上家']
@@ -135,23 +136,34 @@ def render_image_upload_section() -> Dict[str, int]:
                 if 'warped_screen' in debug_bundle:
                     st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
 
-                if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                    st.markdown("##### 3. せん断補正（縦の傾き補正）後の画像と検出角度")
-                    cols = st.columns(4)
-                    for i, player in enumerate(['上家', '対面', '自分', '下家']):
-                         if player in debug_bundle['pre_ocr_images']:
-                            with cols[i]:
-                                st.write(player)
-                                img = debug_bundle['pre_ocr_images'][player]
-                                st.image(img, caption=f"{player} 補正後", use_container_width=True)
+                if 'shear_corrected_screen' in debug_bundle:
+                    st.markdown("##### 3. せん断補正後のスクリーン全体")
+                    st.image(debug_bundle['shear_corrected_screen'], caption="スクリーン全体にせん断補正を適用", use_container_width=True)
+                    if 'shear_angles' in debug_bundle and 'screen' in debug_bundle['shear_angles']:
+                        angle = debug_bundle['shear_angles']['screen']
+                        st.metric(label="検出された全体の傾き", value=f"{angle:.2f}°")
 
-                                # 検出された角度を表示
-                                if 'shear_angles' in debug_bundle and player in debug_bundle['shear_angles']:
-                                    angle = debug_bundle['shear_angles'][player]
-                                    st.metric(label="検出された傾き", value=f"{angle:.2f}°")
+                if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
+                    st.markdown("##### 4. 最終的な切り出し数字")
+                    for player, digits in debug_bundle['deskewed_digits'].items():
+                        st.write(f"**{player}**")
+                        if not digits:
+                            st.write("（数字の切り出しに失敗）")
+                            continue
 
-                # 切り出し処理は無効化したので、このセクションは表示しない
-                # if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
+                        # PILに変換して結合
+                        pil_images = [Image.fromarray(d) for d in digits if d.size > 0]
+                        if pil_images:
+                            widths, heights = zip(*(i.size for i in pil_images))
+                            total_width = sum(widths)
+                            max_height = max(heights)
+
+                            concatenated_image = Image.new('L', (total_width, max_height))
+                            x_offset = 0
+                            for im in pil_images:
+                                concatenated_image.paste(im, (x_offset,0))
+                                x_offset += im.size[0]
+                            st.image(concatenated_image, caption=f"{player} 切り出し後", use_container_width=True)
                 else:
                     st.warning("傾き補正後のデバッグ画像を生成できませんでした。")
             else:
