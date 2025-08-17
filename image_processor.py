@@ -567,10 +567,9 @@ class ScoreImageProcessor:
         画像処理の全ステップのデバッグ情報を生成する。
         """
         debug_bundle = {}
-        original_image = image.copy()
 
         # 1. メインフレーム検出
-        main_frame_img = original_image.copy()
+        main_frame_img = image.copy()
         outer_frame_coords = self._find_main_score_frame(image)
         if outer_frame_coords:
             x, y, w, h = outer_frame_coords
@@ -582,18 +581,24 @@ class ScoreImageProcessor:
         if warped_screen is None:
             debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
             cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        else:
-            debug_bundle['warped_screen'] = warped_screen
+            debug_bundle['split_regions'] = {}
+            debug_bundle['pre_ocr_images'] = {}
+            debug_bundle['deskewed_digits'] = {}
+            return debug_bundle
+
+        debug_bundle['warped_screen'] = warped_screen
 
         # 3. 領域分割
         region_images = self.split_screen_into_regions(warped_screen)
         debug_bundle['split_regions'] = region_images
 
-        # 4. 各プレイヤーのOCR前処理画像
+        # 4. & 5. 各プレイヤーの二値化画像と傾き補正後画像
         pre_ocr_images = {}
+        deskewed_digits_by_player = {}
+
         for player, region_image in region_images.items():
             try:
-                # read_score_from_regionのロジックをここに展開して、中間画像を生成
+                # read_score_from_region と同じ前処理
                 if region_image.shape[0] < 10 or region_image.shape[1] < 20: continue
                 h, w = region_image.shape[:2]
                 margin_y, margin_x = int(h * 0.08), int(w * 0.08)
@@ -609,12 +614,24 @@ class ScoreImageProcessor:
                 resized = cv2.resize(gray, (300, int(h_gray * scale)))
                 blurred = cv2.GaussianBlur(resized, (3, 3), 0)
                 enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
-                _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
+                binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
                 pre_ocr_images[player] = binary
+
+                # ハイブリッド分割と傾き補正
+                digit_data = self._split_digits(binary)
+                if not digit_data: continue
+
+                deskewed_for_player = []
+                for digit_slice, digit_contour in digit_data:
+                    deskewed_digit = self._deskew_digit(digit_slice, digit_contour)
+                    deskewed_for_player.append(deskewed_digit)
+                deskewed_digits_by_player[player] = deskewed_for_player
+
             except Exception as e:
-                print(f"デバッグ情報（OCR画像）生成中にエラー: {player} - {e}")
+                print(f"デバッグ情報生成中にエラー: {player} - {e}")
+
         debug_bundle['pre_ocr_images'] = pre_ocr_images
+        debug_bundle['deskewed_digits'] = deskewed_digits_by_player
 
         return debug_bundle
 

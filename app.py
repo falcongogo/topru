@@ -135,29 +135,26 @@ def render_image_upload_section() -> Dict[str, int]:
                 if 'warped_screen' in debug_bundle:
                     st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
 
-                if 'split_regions' in debug_bundle and debug_bundle['split_regions']:
-                    st.markdown("##### 3. 各プレイヤー領域への分割")
-                    cols = st.columns(len(debug_bundle['split_regions']))
-                    # 順番を '上家', '対面', '自分', '下家' に固定
-                    for i, player in enumerate(['上家', '対面', '自分', '下家']):
-                        if player in debug_bundle['split_regions']:
-                             with cols[i]:
-                                st.write(player)
-                                img = debug_bundle['split_regions'][player]
-                                st.image(img, caption=f"{player}領域", use_container_width=True, channels="BGR")
-
                 if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                    st.markdown("##### 4. OCR直前の二値化画像")
-                    cols = st.columns(len(debug_bundle['pre_ocr_images']))
-                    # 順番を '上家', '対面', '自分', '下家' に固定
+                    st.markdown("##### 3. OCR前処理後の二値化画像")
+                    cols = st.columns(4)
                     for i, player in enumerate(['上家', '対面', '自分', '下家']):
                          if player in debug_bundle['pre_ocr_images']:
                             with cols[i]:
                                 st.write(player)
                                 img = debug_bundle['pre_ocr_images'][player]
-                                st.image(img, caption=f"{player}への入力画像", use_container_width=True)
+                                st.image(img, caption=f"{player} 二値化後", use_container_width=True)
+
+                if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
+                    st.markdown("##### 4. 傾き補正後の最終入力画像")
+                    for player, digits in debug_bundle['deskewed_digits'].items():
+                        st.write(f"**{player}**")
+                        cols = st.columns(len(digits))
+                        for i, digit_img in enumerate(digits):
+                            with cols[i]:
+                                st.image(digit_img, caption=f"桁 {i+1}", use_container_width=True)
                 else:
-                    st.warning("OCR対象の画像を生成できませんでした。")
+                    st.warning("傾き補正後のデバッグ画像を生成できませんでした。")
             else:
                 st.warning("デバッグ情報を生成できませんでした。")
     
