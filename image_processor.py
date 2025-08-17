@@ -95,13 +95,35 @@ class ScoreImageProcessor:
             return []
 
     def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
-        """診断のため、せん断角度を40度に固定して補正する"""
-        dominant_angle_deg = 40.0
-        deviation_rad = np.radians(-dominant_angle_deg)
-        shear_factor = np.tan(deviation_rad)
+        """ハフ変換で画像のせん断を補正し、補正後の画像と角度を返す"""
+        edges = cv2.Canny(image, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=5)
+        if lines is None: return image, 0.0
+
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle_rad = np.arctan2(y2 - y1, x2 - x1)
+            angle_deg = abs(np.degrees(angle_rad))
+            if 75 < angle_deg < 105:
+                deviation = angle_rad - (np.pi / 2)
+                angles.append(deviation)
+
+        if not angles: return image, 0.0
+
+        # ヒストグラムで最頻値のビンの中心を求める
+        counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
+        max_index = np.argmax(counts)
+        dominant_deviation_rad = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
+
+        # せん断係数を計算
+        shear_factor = np.tan(dominant_deviation_rad)
+
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+        dominant_angle_deg = np.degrees(dominant_deviation_rad)
         return corrected_image, dominant_angle_deg
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
