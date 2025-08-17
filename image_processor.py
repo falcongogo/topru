@@ -95,16 +95,16 @@ class ScoreImageProcessor:
         # HSV色空間に変換
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # LCDスクリーンの水色の範囲を定義
-        lower_lcd_blue = np.array([85, 50, 100])
-        upper_lcd_blue = np.array([105, 255, 255])
+        # LCDスクリーンの水色の範囲を定義 (範囲を少し広げる)
+        lower_lcd_blue = np.array([80, 50, 100])
+        upper_lcd_blue = np.array([110, 255, 255])
 
         # マスクを作成
         mask = cv2.inRange(hsv, lower_lcd_blue, upper_lcd_blue)
 
-        # マスクのノイズを除去し、穴を埋めるための形態学的処理
+        # マスクのノイズを除去し、穴を埋めるための形態学的処理（イテレーションを減らす）
         kernel = np.ones((5,5), np.uint8)
-        morphed_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+        morphed_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
         # 輪郭を検出
         contours, _ = cv2.findContours(morphed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -116,12 +116,7 @@ class ScoreImageProcessor:
         # 最も面積の大きい輪郭を見つける
         main_contour = max(contours, key=cv2.contourArea)
 
-        # 輪郭の面積が小さすぎる場合はノイズと判断
-        min_area = image.shape[0] * image.shape[1] * 0.05 # 領域全体の5%未満は除外
-        if cv2.contourArea(main_contour) < min_area:
-            print(f"警告: 検出された水色領域が小さすぎます (面積: {cv2.contourArea(main_contour)})")
-            return None
-
+        # 輪郭の面積チェックを削除（画像がタイトにクロップされている場合に対応）
         return main_contour
 
     def _order_points(self, pts: np.ndarray) -> np.ndarray:
@@ -155,10 +150,10 @@ class ScoreImageProcessor:
 
         return warped
 
-    def _split_digits(self, image: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def _split_digits(self, image: np.ndarray) -> List[np.ndarray]:
         """
-        画像を固定幅で5分割し、各スライス内で最大の輪郭を見つける。(ハイブリッドアプローチ)
-        戻り値: (スライス画像, 輪郭) のタプルのリスト
+        画像を固定幅で5分割する
+        戻り値: 数字画像(np.ndarray)のリスト
         """
         h, w = image.shape[:2]
         digit_width = w // self.expected_digits
@@ -172,69 +167,64 @@ class ScoreImageProcessor:
             margin = int(digit_width * 0.05)
             digit_slice = image[:, x_start + margin : x_end - margin]
 
-            if digit_slice.size == 0:
-                continue
-
-            # スライス内で輪郭を見つける
-            contours, _ = cv2.findContours(digit_slice, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            if not contours:
-                continue
-
-            # 最大の輪郭を数字の輪郭とみなす
-            digit_contour = max(contours, key=cv2.contourArea)
-            results.append((digit_slice, digit_contour))
+            # スライス内で輪郭を見つけてタイトにクロップ
+            contours, _ = cv2.findContours(digit_slice.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                final_contour = max(contours, key=cv2.contourArea)
+                x_b, y_b, w_b, h_b = cv2.boundingRect(final_contour)
+                # 小さすぎるノイズは除去
+                if w_b > 5 and h_b > 10:
+                    results.append(digit_slice[y_b:y_b+h_b, x_b:x_b+w_b])
+                else:
+                    results.append(digit_slice) # ノイズならそのまま
+            else:
+                 results.append(digit_slice)
 
         if len(results) == self.expected_digits:
             return results
         else:
-            print(f"警告: ハイブリッド分割で期待される桁数({self.expected_digits})を検出できませんでした。")
+            print(f"警告: 固定幅分割で期待される桁数({self.expected_digits})を検出できませんでした。")
             return []
 
-    def _deskew_digit(self, digit_image: np.ndarray, contour: np.ndarray) -> np.ndarray:
+    def _deskew_image(self, image: np.ndarray) -> np.ndarray:
         """
-        輪郭情報を用いて、傾いた単一の数字画像をまっすぐに補正する。
-        画像は既に切り出されていること、輪郭座標は切り出された画像に
-        対する相対座標であることを前提とする。
+        ハフ変換を用いて、傾いた画像をまっすぐに補正する。
+        画像は黒背景(0)、白文字(255)の二値化画像であることを前提とする。
         """
-        # 輪郭から最小面積の矩形を取得
-        rect = cv2.minAreaRect(contour)
+        # Cannyエッジ検出
+        edges = cv2.Canny(image, 50, 150, apertureSize=3)
 
-        # 矩形の角度を取得
-        angle = rect[2]
+        # 確率的ハフ変換で直線を検出 (より厳しいパラメータ)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=40, minLineLength=20, maxLineGap=3)
 
-        # OpenCVの角度の仕様に合わせて調整 (-90から0の範囲)
-        # 角度が-45度より小さい場合、矩形が90度回転しているとみなし補正
-        if angle < -45:
-            angle += 90
+        if lines is None:
+            return image
 
-        # 画像の中心を回転の中心に設定
-        (h, w) = digit_image.shape[:2]
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if x1 == x2:
+                continue
+            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            if abs(angle) < 45:
+                 angles.append(angle)
+
+        if not angles:
+            return image
+
+        median_angle = np.median(angles)
+
+        (h, w) = image.shape[:2]
         center = (w // 2, h // 2)
+        M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+        deskewed = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
-        # 回転行列を計算
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
-
-        # アフィン変換を適用して画像を回転
-        # 背景は黒(0)、文字は白(255)の二値化画像を想定しているため、
-        # ボーダー（画像の外部）は背景色である黒で埋める。
-        deskewed = cv2.warpAffine(digit_image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-
-        # 回転後の画像で再度輪郭を見つけてタイトにクロップする
-        contours, _ = cv2.findContours(deskewed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            final_contour = max(contours, key=cv2.contourArea)
-            x_b, y_b, w_b, h_b = cv2.boundingRect(final_contour)
-            cropped_deskewed = deskewed[y_b:y_b+h_b, x_b:x_b+w_b]
-            return cropped_deskewed
-
-        # 輪郭が見つからなければ、元の補正画像を返す
         return deskewed
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
         """
         単一の数字画像から7セグメントのパターンを読み取り、数字を返す。
-        画像は黒い文字(0)と白い背景(255)に二値化されていることを前提とする。
+        画像は白文字(255)と黒い背景(0)に二値化されていることを前提とする。
         """
         if digit_image is None or digit_image.size == 0:
             return None
@@ -243,98 +233,46 @@ class ScoreImageProcessor:
         if h < 10 or w < 5: # 小さすぎる画像は処理しない
             return None
 
-        # セグメントの中心付近の相対座標
-        # (y, x) の順で指定
-        segment_coords = {
-            'a': (h * 0.1, w * 0.5),
-            'b': (h * 0.25, w * 0.8),
-            'c': (h * 0.75, w * 0.8),
-            'd': (h * 0.9, w * 0.5),
-            'e': (h * 0.75, w * 0.2),
-            'f': (h * 0.25, w * 0.2),
-            'g': (h * 0.5, w * 0.5)
-        }
-
-        # 各セグメントがオン(白)かどうかを判定するしきい値
-        on_threshold = 128
-
-        # セグメント領域を定義 (x_start, y_start, x_end, y_end) as percentages
         rois = {
-            'a': (0.2, 0.0, 0.8, 0.2),
-            'b': (0.7, 0.1, 1.0, 0.45),
-            'c': (0.7, 0.55, 1.0, 0.9),
-            'd': (0.2, 0.8, 0.8, 1.0),
-            'e': (0.0, 0.55, 0.3, 0.9),
-            'f': (0.0, 0.1, 0.3, 0.45),
+            'a': (0.2, 0.0, 0.8, 0.2), 'b': (0.7, 0.1, 1.0, 0.45),
+            'c': (0.7, 0.55, 1.0, 0.9), 'd': (0.2, 0.8, 0.8, 1.0),
+            'e': (0.0, 0.55, 0.3, 0.9), 'f': (0.0, 0.1, 0.3, 0.45),
             'g': (0.2, 0.4, 0.8, 0.6)
         }
 
         def is_on(segment_roi):
             x1, y1, x2, y2 = segment_roi
-            roi = digit_image[int(y1*h):int(y2*h), int(x1*w):int(x2*w)]
-            if roi.size == 0:
-                return False
-            # ROI内のピクセルの平均値がしきい値を超えていればオン
-            return np.mean(roi) > on_threshold
+            roi_abs = digit_image[int(y1*h):int(y2*h), int(x1*w):int(x2*w)]
+            if roi_abs.size == 0: return False
+            active_pixels = np.count_nonzero(roi_abs)
+            total_pixels = roi_abs.size
+            return (active_pixels / total_pixels) > 0.1
 
         try:
-            pattern = (
-                is_on(rois['a']),
-                is_on(rois['b']),
-                is_on(rois['c']),
-                is_on(rois['d']),
-                is_on(rois['e']),
-                is_on(rois['f']),
-                is_on(rois['g'])
-            )
+            pattern = tuple(is_on(rois[seg]) for seg in ['a', 'b', 'c', 'd', 'e', 'f', 'g'])
         except (IndexError, ValueError):
             return None
 
-        # --- DEBUG ---
-        # import random
-        # num = random.randint(0, 1000)
-        # cv2.imwrite(f"debug_digit_{num}.png", digit_image)
-        # print(f"Digit {num} pattern: {pattern}")
-        # --- END DEBUG ---
-
-        # 定義されたパターンに一致するか確認
         return self.seven_segment_patterns.get(pattern)
 
     def detect_and_warp_screen(self, image: np.ndarray) -> Optional[np.ndarray]:
         """
         画像からLCDスクリーンを検出し、傾きを補正した画像を返す。
+        (外側フレーム検出をバイパスし、画像全体から直接LCDスクリーンを探すように修正)
         """
-        # 1. 全体を囲む外側フレームを検出
-        outer_frame_coords = self._find_main_score_frame(image)
-        if outer_frame_coords is None:
-            print("警告: スコア表示のメインフレームを検出できませんでした。")
-            return None
-
-        x_outer, y_outer, w_outer, h_outer = outer_frame_coords
-        outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
-
-        # 2. 外側フレーム内で、内側のLCDスクリーンの輪郭情報を取得
-        contour = self._find_inner_lcd_screen_contour(outer_frame_img)
+        contour = self._find_inner_lcd_screen_contour(image)
         if contour is None:
             print("警告: 内側のLCDスクリーンを検出できませんでした。")
             return None
 
-        # 3. 最小外接矩形の情報を取得
         rect = cv2.minAreaRect(contour)
         box = cv2.boxPoints(rect)
+        box_abs = np.intp(box)
 
-        # 座標を絶対座標に変換
-        box_abs = np.intp(box + (x_outer, y_outer))
-
-        # 出力画像のサイズを決定 (width, height)
         (w, h) = rect[1]
-        # ランドスケープモードを維持
-        if w < h:
-            (w, h) = (h, w)
+        if w < h: (w, h) = (h, w)
 
-        # 4. 検出した四隅を元に、傾きを補正した画像を取得
         warped_screen = self._four_point_transform(image, box_abs, (int(w), int(h)))
-
         return warped_screen
 
     def split_screen_into_regions(self, screen_image: np.ndarray) -> Dict[str, np.ndarray]:
@@ -346,125 +284,84 @@ class ScoreImageProcessor:
             return {}
 
         h, w = screen_image.shape[:2]
-
-        # 水平に2:3:2の比率で分割
         total_parts = 7
         part_w = w / total_parts
         x1_split = int(2 * part_w)
         x2_split = int(5 * part_w)
 
-        # 領域を定義
         left_img = screen_image[:, 0:x1_split]
         middle_img = screen_image[:, x1_split:x2_split]
         right_img = screen_image[:, x2_split:w]
 
-        # 中央の領域を垂直に2分割
         mid_h = middle_img.shape[0] // 2
         middle_top_img = middle_img[0:mid_h, :]
         middle_bottom_img = middle_img[mid_h:, :]
 
-        regions = {
-            '上家': left_img,
-            '対面': middle_top_img,
-            '自分': middle_bottom_img,
-            '下家': right_img
+        return {
+            '上家': left_img, '対面': middle_top_img,
+            '自分': middle_bottom_img, '下家': right_img
         }
-
-        return regions
     
     def read_score_from_region(self, region_image: np.ndarray, player: str) -> Optional[int]:
         """指定された領域から点数を読み取り"""
         try:
-            # 領域が小さすぎる場合はスキップ
-            if region_image.shape[0] < 10 or region_image.shape[1] < 20:
-                return None
+            if region_image.shape[0] < 10 or region_image.shape[1] < 20: return None
 
-            # 余白をカットして枠線の影響を除去 (上下左右8%)
             h, w = region_image.shape[:2]
             margin_y, margin_x = int(h * 0.08), int(w * 0.08)
             roi = region_image[margin_y : h - margin_y, margin_x : w - margin_x]
+            if roi.shape[0] < 5 or roi.shape[1] < 10: return None
 
-            if roi.shape[0] < 5 or roi.shape[1] < 10:
-                return None
-
-            # OCRに適した前処理
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-            # 他家の場合は、下部の点差表示を無視するために上半分をクロップ
             if player != '自分':
-                h, w = gray.shape
-                gray = gray[0:int(h * 0.7)]
+                h_gray, w_gray = gray.shape
+                gray = gray[0:int(h_gray * 0.7)]
 
-            # サイズ正規化（幅300pxに）
-            h, w = gray.shape
-            if w == 0: return None
-            scale = 300 / w
-            resized = cv2.resize(gray, (300, int(h * scale)))
+            h_gray, w_gray = gray.shape
+            if w_gray == 0: return None
+            scale = 300 / w_gray
+            resized = cv2.resize(gray, (300, int(h_gray * scale)))
 
-            # ガウシアンブラーでノイズ除去
             blurred = cv2.GaussianBlur(resized, (5, 5), 0)
-
-            # 大津の二値化
             _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-            # オープニング処理でノイズ除去
             kernel = np.ones((3,3), np.uint8)
             binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
             
-            # --- DEBUG ---
-            cv2.imwrite(f"debug_binary.png", binary)
-            # --- END DEBUG ---
-
-            # 7セグメントロジックで数字を認識
-            digit_data = self._split_digits(binary)
+            # 1. 領域全体の傾きを補正
+            deskewed_region = self._deskew_image(binary)
             
-            if len(digit_data) != self.expected_digits:
-                # print(f"警告: {player}の領域から期待される桁数({self.expected_digits})の数字を切り出せませんでした。")
+            # 2. 傾き補正された画像から数字を切り出し
+            digit_images = self._split_digits(deskewed_region)
+
+            if len(digit_images) != self.expected_digits:
                 return None
 
             recognized_digits = []
-            for digit_slice, digit_contour in digit_data:
-                # 傾きを補正
-                deskewed_digit = self._deskew_digit(digit_slice, digit_contour)
-                # 認識
-                digit = self._recognize_7_segment_digit(deskewed_digit)
-
+            for digit_img in digit_images:
+                digit = self._recognize_7_segment_digit(digit_img)
                 if digit is not None:
                     recognized_digits.append(str(digit))
                 else:
-                    # 1桁でも認識に失敗したら、その点数は無効
                     print(f"警告: {player}の領域で数字の一部の認識に失敗しました。")
                     return None
 
             if len(recognized_digits) == self.expected_digits:
-                # 下2桁が「00」であるか検証
                 if recognized_digits[-1] != '0' or recognized_digits[-2] != '0':
                     print(f"警告: {player}の領域で読み取った点数の下2桁が00ではありません: {''.join(recognized_digits)}")
                     return None
-                score_str = "".join(recognized_digits)
-                score = int(score_str)
-
-                # 点数として妥当かチェック
+                score = int("".join(recognized_digits))
                 if self._is_valid_score(score):
                     return score
-
             return None
-            
         except Exception as e:
-            print(f"OCR読み取りエラー: {e}")
+            print(f"OCR読み取りエラー: {player} - {e}")
             return None
     
     def _is_valid_score(self, score: int) -> bool:
         """点数として妥当かチェック"""
-        # 範囲チェック
-        if not (self.min_score <= score <= self.max_score):
-            return False
-        
-        # 桁数チェック（5桁の数字）
-        if len(str(score)) != self.expected_digits:
-            return False
-        
-        # 100点単位のチェックは、認識段階の「00」検証に移動したため不要
+        if not (self.min_score <= score <= self.max_score): return False
+        if len(str(score)) != self.expected_digits: return False
         return True
     
     def process_score_image(self, image_path: str) -> Dict[str, int]:
@@ -516,27 +413,11 @@ class ScoreImageProcessor:
         """デバッグ用：検出された領域と補正後のスクリーンを可視化"""
         debug_image = image.copy()
         
-        # 元の画像に検出したスクリーン領域の輪郭を描画
-        outer_frame_coords = self._find_main_score_frame(image)
-        if outer_frame_coords:
-            x_outer, y_outer, w_outer, h_outer = outer_frame_coords
-            outer_frame_img = image[y_outer:y_outer+h_outer, x_outer:x_outer+w_outer]
-            contour = self._find_inner_lcd_screen_contour(outer_frame_img)
-
-            if contour is not None:
-                rect = cv2.minAreaRect(contour)
-                box = cv2.boxPoints(rect)
-                box_abs = np.intp(box + (x_outer, y_outer))
-                cv2.drawContours(debug_image, [box_abs], -1, (0, 255, 0), 2)
-
-        # 補正後のスクリーン画像を取得
         warped_screen = self.detect_and_warp_screen(image)
         if warped_screen is None:
-            # 失敗した場合は元の画像にテキストを描画
             cv2.putText(debug_image, "Screen not found", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             return debug_image
 
-        # 補正後の画像に分割線を描画
         h, w = warped_screen.shape[:2]
         total_parts = 7
         part_w = w / total_parts
@@ -544,25 +425,17 @@ class ScoreImageProcessor:
         x2_split = int(5 * part_w)
         cv2.line(warped_screen, (x1_split, 0), (x1_split, h), (0, 0, 255), 1)
         cv2.line(warped_screen, (x2_split, 0), (x2_split, h), (0, 0, 255), 1)
-
         mid_h = h // 2
         cv2.line(warped_screen, (x1_split, mid_h), (x2_split, mid_h), (0, 0, 255), 1)
 
-        # 2つの画像を結合して表示
         h1, w1 = debug_image.shape[:2]
         h2, w2 = warped_screen.shape[:2]
-        # 結合後の幅をオリジナル画像の幅に合わせる
         combined_width = w1
-        # 高さを計算
         combined_height = h1 + int(h2 * (w1 / w2))
-
         combined_image = np.zeros((combined_height, combined_width, 3), dtype=np.uint8)
         combined_image[0:h1, 0:w1] = debug_image
-
-        # 補正後画像をリサイズして結合
         resized_warped = cv2.resize(warped_screen, (w1, int(h2 * (w1 / w2))))
         combined_image[h1:, 0:w1] = resized_warped
-
         return combined_image
 
     def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
@@ -570,38 +443,23 @@ class ScoreImageProcessor:
         画像処理の全ステップのデバッグ情報を生成する。
         """
         debug_bundle = {}
+        debug_bundle['main_frame'] = image.copy()
 
-        # 1. メインフレーム検出
-        main_frame_img = image.copy()
-        outer_frame_coords = self._find_main_score_frame(image)
-        if outer_frame_coords:
-            x, y, w, h = outer_frame_coords
-            cv2.rectangle(main_frame_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
-        debug_bundle['main_frame'] = main_frame_img
-
-        # 2. 傾き補正済みスクリーン
         warped_screen = self.detect_and_warp_screen(image)
         if warped_screen is None:
             debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
             cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            debug_bundle['split_regions'] = {}
-            debug_bundle['pre_ocr_images'] = {}
-            debug_bundle['deskewed_digits'] = {}
             return debug_bundle
-
         debug_bundle['warped_screen'] = warped_screen
 
-        # 3. 領域分割
         region_images = self.split_screen_into_regions(warped_screen)
         debug_bundle['split_regions'] = region_images
 
-        # 4. & 5. 各プレイヤーの二値化画像と傾き補正後画像
         pre_ocr_images = {}
         deskewed_digits_by_player = {}
 
         for player, region_image in region_images.items():
             try:
-                # read_score_from_region と同じ前処理
                 if region_image.shape[0] < 10 or region_image.shape[1] < 20: continue
                 h, w = region_image.shape[:2]
                 margin_y, margin_x = int(h * 0.08), int(w * 0.08)
@@ -619,24 +477,19 @@ class ScoreImageProcessor:
                 _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
                 kernel = np.ones((3,3), np.uint8)
                 binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-                pre_ocr_images[player] = binary
 
-                # ハイブリッド分割と傾き補正
-                digit_data = self._split_digits(binary)
-                if not digit_data: continue
+                deskewed_region = self._deskew_image(binary)
+                pre_ocr_images[player] = deskewed_region
 
-                deskewed_for_player = []
-                for digit_slice, digit_contour in digit_data:
-                    deskewed_digit = self._deskew_digit(digit_slice, digit_contour)
-                    deskewed_for_player.append(deskewed_digit)
-                deskewed_digits_by_player[player] = deskewed_for_player
+                digit_images = self._split_digits(deskewed_region)
+                if not digit_images: continue
 
+                deskewed_digits_by_player[player] = digit_images
             except Exception as e:
                 print(f"デバッグ情報生成中にエラー: {player} - {e}")
 
         debug_bundle['pre_ocr_images'] = pre_ocr_images
         debug_bundle['deskewed_digits'] = deskewed_digits_by_player
-
         return debug_bundle
 
 def test_image_processor():
