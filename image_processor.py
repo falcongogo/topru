@@ -95,8 +95,8 @@ class ScoreImageProcessor:
             return []
 
     def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
-        """診断のため、せん断角度を9度に固定して補正する"""
-        dominant_angle_deg = 9.0
+        """診断のため、せん断角度を40度に固定して補正する"""
+        dominant_angle_deg = 40.0
         deviation_rad = np.radians(-dominant_angle_deg)
         shear_factor = np.tan(deviation_rad)
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
