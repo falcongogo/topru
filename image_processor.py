@@ -402,11 +402,14 @@ class ScoreImageProcessor:
             resized = cv2.resize(gray, (300, int(h * scale)))
 
             # ガウシアンブラーでノイズ除去
-            blurred = cv2.GaussianBlur(resized, (3, 3), 0)
+            blurred = cv2.GaussianBlur(resized, (5, 5), 0)
 
-            enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
-            # 背景を白、文字を黒に (適応的しきい値処理)
-            binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+            # 大津の二値化
+            _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+            # オープニング処理でノイズ除去
+            kernel = np.ones((3,3), np.uint8)
+            binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
             
             # --- DEBUG ---
             cv2.imwrite(f"debug_binary.png", binary)
@@ -612,9 +615,10 @@ class ScoreImageProcessor:
                 if w_gray == 0: continue
                 scale = 300 / w_gray
                 resized = cv2.resize(gray, (300, int(h_gray * scale)))
-                blurred = cv2.GaussianBlur(resized, (3, 3), 0)
-                enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(blurred)
-                binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+                blurred = cv2.GaussianBlur(resized, (5, 5), 0)
+                _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                kernel = np.ones((3,3), np.uint8)
+                binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
                 pre_ocr_images[player] = binary
 
                 # ハイブリッド分割と傾き補正
