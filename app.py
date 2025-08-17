@@ -136,23 +136,17 @@ def render_image_upload_section() -> Dict[str, int]:
                     st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
 
                 if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                    st.markdown("##### 3. OCR前処理後の二値化画像")
+                    st.markdown("##### 3. せん断補正（縦の傾き補正）後の画像")
                     cols = st.columns(4)
                     for i, player in enumerate(['上家', '対面', '自分', '下家']):
                          if player in debug_bundle['pre_ocr_images']:
                             with cols[i]:
                                 st.write(player)
                                 img = debug_bundle['pre_ocr_images'][player]
-                                st.image(img, caption=f"{player} 二値化後", use_container_width=True)
+                                st.image(img, caption=f"{player} 補正後", use_container_width=True)
 
-                if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
-                    st.markdown("##### 4. 傾き補正後の最終入力画像")
-                    for player, digits in debug_bundle['deskewed_digits'].items():
-                        st.write(f"**{player}**")
-                        cols = st.columns(len(digits))
-                        for i, digit_img in enumerate(digits):
-                            with cols[i]:
-                                st.image(digit_img, caption=f"桁 {i+1}", use_container_width=True)
+                # 切り出し処理は無効化したので、このセクションは表示しない
+                # if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
                 else:
                     st.warning("傾き補正後のデバッグ画像を生成できませんでした。")
             else:

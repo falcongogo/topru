@@ -428,42 +428,14 @@ class ScoreImageProcessor:
             cv2.imwrite(f"debug_binary.png", binary)
             # --- END DEBUG ---
 
-            # 7セグメントロジックで数字を認識
-            # 1. 領域全体のせん断を補正
-            corrected_binary = self._correct_shear(binary)
+            # --- DEBUG ---
+            # cv2.imwrite(f"debug_binary.png", binary)
+            # --- END DEBUG ---
 
-            # 2. 補正後の画像から数字を切り出し
-            digit_data = self._split_digits(corrected_binary)
+            # せん断補正のみ実行し、認識処理は行わない
+            self._correct_shear(binary)
 
-            if len(digit_data) != self.expected_digits:
-                # print(f"警告: {player}の領域から期待される桁数({self.expected_digits})の数字を切り出せませんでした。")
-                return None
-
-            recognized_digits = []
-            for digit_slice, digit_contour in digit_data:
-                # 3. 数字を認識 (個別の傾き補正は不要)
-                digit = self._recognize_7_segment_digit(digit_slice)
-
-                if digit is not None:
-                    recognized_digits.append(str(digit))
-                else:
-                    # 1桁でも認識に失敗したら、その点数は無効
-                    print(f"警告: {player}の領域で数字の一部の認識に失敗しました。")
-                    return None
-
-            if len(recognized_digits) == self.expected_digits:
-                # 下2桁が「00」であるか検証
-                if recognized_digits[-1] != '0' or recognized_digits[-2] != '0':
-                    print(f"警告: {player}の領域で読み取った点数の下2桁が00ではありません: {''.join(recognized_digits)}")
-                    return None
-                score_str = "".join(recognized_digits)
-                score = int(score_str)
-
-                # 点数として妥当かチェック
-                if self._is_valid_score(score):
-                    return score
-
-            return None
+            return None # 常にNoneを返す
 
         except Exception as e:
             print(f"OCR読み取りエラー: {e}")
@@ -636,15 +608,12 @@ class ScoreImageProcessor:
                 binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
                 pre_ocr_images[player] = binary
 
-                # せん断補正と分割
+                # せん断補正を適用し、その結果を保存
                 corrected_binary = self._correct_shear(binary)
-                pre_ocr_images[player] = corrected_binary # せん断補正後の画像を保存
+                pre_ocr_images[player] = corrected_binary
 
-                digit_data = self._split_digits(corrected_binary)
-                if not digit_data: continue
-
-                # 切り出した画像をそのまま保存
-                deskewed_digits_by_player[player] = [digit_slice for digit_slice, _ in digit_data]
+                # 切り出しは行わないので、deskewed_digitsは空のまま
+                deskewed_digits_by_player[player] = []
 
             except Exception as e:
                 print(f"デバッグ情報生成中にエラー: {player} - {e}")
