@@ -149,7 +149,7 @@ def render_image_upload_section() -> Dict[str, int]:
                             continue
 
                         # PILに変換して結合
-                        pil_images = [Image.fromarray(d) for d in digits if d and d.size > 0]
+                        pil_images = [Image.fromarray(d) for d in digits if d is not None and d.size > 0]
                         if pil_images:
                             widths, heights = zip(*(i.size for i in pil_images))
                             total_width = sum(widths)
