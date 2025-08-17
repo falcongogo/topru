@@ -223,8 +223,8 @@ class ScoreImageProcessor:
         counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
         dominant_deviation = bin_edges[np.argmax(counts)]
 
-        # せん断係数を計算 (tan(ずれ))
-        shear_factor = -np.tan(dominant_deviation)
+        # せん断係数を計算 (tan(ずれ))。マイナス符号を削除して補正方向を修正
+        shear_factor = np.tan(dominant_deviation)
 
         # アフィン変換行列を作成
         M = np.array([
