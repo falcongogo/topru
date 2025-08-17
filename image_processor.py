@@ -95,26 +95,13 @@ class ScoreImageProcessor:
             return []
 
     def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
-        """ハフ変換で画像のせん断を補正し、補正後の画像と角度を返す"""
-        edges = cv2.Canny(image, 50, 150, apertureSize=3)
-        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=5)
-        if lines is None: return image, 0.0
-        angles = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            angle_rad = np.arctan2(y2 - y1, x2 - x1)
-            angle_deg = abs(np.degrees(angle_rad))
-            if 75 < angle_deg < 105:
-                deviation = angle_rad - (np.pi / 2)
-                angles.append(deviation)
-        if not angles: return image, 0.0
-        counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
-        dominant_deviation_rad = bin_edges[np.argmax(counts)]
-        shear_factor = np.tan(dominant_deviation_rad)
+        """診断のため、せん断角度を9度に固定して補正する"""
+        dominant_angle_deg = 9.0
+        deviation_rad = np.radians(-dominant_angle_deg)
+        shear_factor = np.tan(deviation_rad)
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        dominant_angle_deg = np.degrees(dominant_deviation_rad)
         return corrected_image, dominant_angle_deg
 
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
@@ -131,7 +118,7 @@ class ScoreImageProcessor:
             roi_abs = digit_image[int(y1*h):int(y2*h), int(x1*w):int(x2*w)]
             if roi_abs.size == 0: return False
             active_pixels = np.count_nonzero(roi_abs)
-            return (active_pixels / roi_abs.size) > 0.1
+            return (active_pixels / roi_abs.size) > 0.1 if roi_abs.size > 0 else False
         try:
             pattern = tuple(is_on(rois[seg]) for seg in ['a', 'b', 'c', 'd', 'e', 'f', 'g'])
             return self.seven_segment_patterns.get(pattern)
@@ -198,27 +185,21 @@ class ScoreImageProcessor:
 
     def process_score_image(self, image: np.ndarray) -> Dict[str, int]:
         """画像から全プレイヤーの点数を読み取り（新しいパイプライン）"""
-        # 1. パース補正
         warped_screen = self.detect_and_warp_screen(image)
         if warped_screen is None: return {}
         
-        # 2. 二値化
         gray = cv2.cvtColor(warped_screen, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         kernel = np.ones((3,3), np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
 
-        # 3. せん断補正
         corrected_binary, _ = self._correct_shear(binary)
 
-        # 4. 領域分割
         region_images = self.split_screen_into_regions(corrected_binary)
 
-        # 5. 各領域からスコア読み取り
         scores = {}
         for player, region_image in region_images.items():
-            # 他家は上半分をクロップ
             if player != '自分':
                 h, w = region_image.shape
                 region_image = region_image[0:int(h * 0.7)]
@@ -254,17 +235,16 @@ class ScoreImageProcessor:
         debug_bundle['shear_angles'] = {'screen': angle}
 
         region_images = self.split_screen_into_regions(corrected_binary)
-        debug_bundle['split_regions'] = {}
         deskewed_digits_by_player = {}
 
         for player, region_image in region_images.items():
-            # 他家は上半分をクロップ
             if player != '自分':
                 h, w = region_image.shape
                 region_image = region_image[0:int(h * 0.7)]
 
-            debug_bundle['split_regions'][player] = region_image
-            deskewed_digits_by_player[player] = self._split_digits(region_image)
+            # For display, split the corrected regions.
+            digits = self._split_digits(region_image)
+            deskewed_digits_by_player[player] = digits if digits else []
 
         debug_bundle['deskewed_digits'] = deskewed_digits_by_player
         return debug_bundle
