@@ -103,9 +103,9 @@ def render_image_upload_section() -> Dict[str, int]:
             else:
                 st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
 
-            # 処理済みのファイルIDを保存し、画面を再実行してUIに反映
+            # 処理済みのファイルIDを保存
             st.session_state.last_uploaded_file_id = uploaded_file.file_id
-            st.rerun()
+            # st.rerun() # エラーメッセージが消えてしまうため、一旦コメントアウト
 
         # --- ここから下の部分は、ファイルがアップロードされている場合に常に表示 ---
 
