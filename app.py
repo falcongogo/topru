@@ -138,10 +138,7 @@ def render_image_upload_section() -> Dict[str, int]:
 
                 if 'shear_corrected_screen' in debug_bundle:
                     st.markdown("##### 3. せん断補正後のスクリーン全体")
-                    st.image(debug_bundle['shear_corrected_screen'], caption="スクリーン全体にせん断補正を適用", use_container_width=True)
-                    if 'shear_angles' in debug_bundle and 'screen' in debug_bundle['shear_angles']:
-                        angle = debug_bundle['shear_angles']['screen']
-                        st.metric(label="検出された全体の傾き", value=f"{angle:.2f}°")
+                    st.image(debug_bundle['shear_corrected_screen'], caption="スクリーン全体にせん断補正を適用 (9°で固定)", use_container_width=True)
 
                 if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
                     st.markdown("##### 4. 最終的な切り出し数字")
@@ -152,7 +149,7 @@ def render_image_upload_section() -> Dict[str, int]:
                             continue
 
                         # PILに変換して結合
-                        pil_images = [Image.fromarray(d) for d in digits if d.size > 0]
+                        pil_images = [Image.fromarray(d) for d in digits if d and d.size > 0]
                         if pil_images:
                             widths, heights = zip(*(i.size for i in pil_images))
                             total_width = sum(widths)
