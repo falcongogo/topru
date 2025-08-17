@@ -219,11 +219,12 @@ class ScoreImageProcessor:
         if not angles:
             return image
 
-        # ずれのメディアンを計算
-        median_deviation = np.median(angles)
+        # ずれのヒストグラムを作成し、最頻値を求める
+        counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
+        dominant_deviation = bin_edges[np.argmax(counts)]
 
         # せん断係数を計算 (tan(ずれ))
-        shear_factor = -np.tan(median_deviation)
+        shear_factor = -np.tan(dominant_deviation)
 
         # アフィン変換行列を作成
         M = np.array([
