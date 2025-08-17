@@ -136,7 +136,7 @@ def render_image_upload_section() -> Dict[str, int]:
                     st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
 
                 if 'pre_ocr_images' in debug_bundle and debug_bundle['pre_ocr_images']:
-                    st.markdown("##### 3. せん断補正（縦の傾き補正）後の画像")
+                    st.markdown("##### 3. せん断補正（縦の傾き補正）後の画像と検出角度")
                     cols = st.columns(4)
                     for i, player in enumerate(['上家', '対面', '自分', '下家']):
                          if player in debug_bundle['pre_ocr_images']:
@@ -144,6 +144,11 @@ def render_image_upload_section() -> Dict[str, int]:
                                 st.write(player)
                                 img = debug_bundle['pre_ocr_images'][player]
                                 st.image(img, caption=f"{player} 補正後", use_container_width=True)
+
+                                # 検出された角度を表示
+                                if 'shear_angles' in debug_bundle and player in debug_bundle['shear_angles']:
+                                    angle = debug_bundle['shear_angles'][player]
+                                    st.metric(label="検出された傾き", value=f"{angle:.2f}°")
 
                 # 切り出し処理は無効化したので、このセクションは表示しない
                 # if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
