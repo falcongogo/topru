@@ -62,12 +62,13 @@ def render_image_upload_section() -> Dict[str, int]:
     """画像アップロードセクションの描画"""
     st.subheader('📷 スリムスコア28S画像から自動入力')
 
+    # Initialize session state keys
     if 'last_uploaded_file_id' not in st.session_state:
         st.session_state.last_uploaded_file_id = None
     if 'ocr_status' not in st.session_state:
         st.session_state.ocr_status = None
 
-    # セッション状態からOCRの結果メッセージを表示
+    # Display OCR status from previous run
     if st.session_state.ocr_status:
         status = st.session_state.ocr_status
         if status['status'] == 'success':
@@ -109,15 +110,21 @@ def render_image_upload_section() -> Dict[str, int]:
         )
 
     if uploaded_file is not None:
-        # 新しいファイルがアップロードされたか、または補正設定が変更された場合に再処理
         current_config_id = f"{uploaded_file.file_id}-{shear_method}-{manual_angle}"
-        if current_config_id != st.session_state.get('last_uploaded_file_id'):
+        last_config_id = st.session_state.get('last_uploaded_file_id')
+
+        # Reprocess if the file or any setting has changed
+        if current_config_id != last_config_id:
+            uploaded_file.seek(0)
             with st.spinner('画像を処理中...'):
                 result = process_uploaded_image(uploaded_file, shear_method, manual_angle)
-
             st.session_state.ocr_status = result
             if result['status'] == 'success':
                 st.session_state.scores = result['scores']
+
+            # Invalidate the old debug bundle as config has changed
+            if 'debug_bundle' in st.session_state:
+                del st.session_state['debug_bundle']
 
             st.session_state.last_uploaded_file_id = current_config_id
 
@@ -128,8 +135,9 @@ def render_image_upload_section() -> Dict[str, int]:
         if debug_mode:
             st.markdown("---")
             st.subheader("🛠️ デバッグ情報")
-            # 設定が変更されたらデバッグ情報も再生成
-            if 'debug_bundle' not in st.session_state or st.session_state.last_uploaded_file_id != current_config_id:
+
+            # Regenerate debug bundle if it doesn't exist (it was deleted on config change)
+            if 'debug_bundle' not in st.session_state:
                 uploaded_file.seek(0)
                 with st.spinner('詳細デバッグ情報を生成中...'):
                     st.session_state.debug_bundle = process_uploaded_image_full_debug(uploaded_file, shear_method, manual_angle)
