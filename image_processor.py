@@ -124,7 +124,7 @@ class ScoreImageProcessor:
         dominant_deviation_rad = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
 
         # せん断係数を計算
-        shear_factor = np.tan(dominant_deviation_rad)
+        shear_factor = -np.tan(dominant_deviation_rad)
 
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]

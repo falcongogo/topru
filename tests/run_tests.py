@@ -7,6 +7,9 @@ import unittest
 import sys
 import os
 
+# プロジェクトのルートディレクトリをPythonパスに追加
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 def run_all_tests():
     """全てのテストを実行"""
     # テストファイルのリスト
