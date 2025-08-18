@@ -8,126 +8,82 @@
 - 直撃ロン、他家放銃ロン、ツモの3つのパターンを表示
 - 積み棒・供託棒を考慮した計算
 - 親・子の違いを考慮した計算
-- **スリムスコア28S画像からの自動点数入力**（新機能）
-
-## インストール
-
-### 1. Tesseract OCRのインストール
-
-本ツールの画像認識機能は、GoogleのOCRエンジンであるTesseractを使用しています。
-事前に、お使いの環境にTesseractをインストールしてください。
-
-- **Ubuntu/Debian**
-  ```bash
-  sudo apt-get update
-  sudo apt-get install tesseract-ocr
-  ```
-
-- **macOS** (Homebrewを使用)
-  ```bash
-  brew install tesseract
-  ```
-
-- **Windows**
-  - [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki) からインストーラーをダウンロードしてインストールしてください。
-  - インストール時に、**"Add Tesseract to system PATH"** のようなオプションにチェックを入れることを推奨します。PATHが通っていない場合は、別途システム環境変数にTesseractのインストール先を追加する必要があります。
-
-### 2. Pythonライブラリのインストール
-
-```bash
-pip install -r requirements.txt
-```
-
-## 使用方法
-
-```bash
-streamlit run app.py
-```
+- **スリムスコア28S画像からの自動点数入力**
 
 ### 画像からの自動点数入力
 
-1. スリムスコア28Sの点数表示をスマホで撮影
-2. アプリの「📷 スリムスコア28S画像から自動入力」セクションで画像をアップロード
-3. 「🔍 画像から点数を読み取り」ボタンをクリック
-4. 自動読み取りされた点数が手動入力欄に反映されます
-5. 必要に応じて手動で調整してから「計算」ボタンをクリック
+本ツールのコア機能の一つです。スマホなどで撮影した、家庭用麻雀卓「スリムスコア28S」の点数表示部分の画像をアップロードすることで、自動で点数を読み取ります。
 
-**自動検出機能**:
-- 固定座標ではなく、画像から自動的に点数表示領域を検出
-- MSER（Maximally Stable Extremal Regions）を使用した文字領域検出
-- OCRによる文字認識と点数妥当性チェック
-- 重複領域の自動マージ機能
+**自動検出アルゴリズム**:
+- **スクリーン検出**: 画像全体からHSV色空間を利用して青いLCDスクリーン領域を検出します。
+- **幾何学補正**: 検出したスクリーンの4点の座標から、`cv2.getPerspectiveTransform`を用いて傾きや歪みを補正し、長方形のスクリーン画像に変換します。
+- **せん断補正**: 7セグメントデジタルの僅かな傾き（せん断）をハフ変換 (`cv2.HoughLinesP`) で検出し、補正します。
+- **7セグメント認識**: 補正後の画像から各プレイヤーの点数領域を切り出し、さらに5桁の数字に分割します。各数字画像について、7つのセグメント領域の輝度をチェックし、どのセグメントが点灯しているかのパターンから0-9の数値を認識します。
 
 **デバッグ機能**:
-- 「🔧 デバッグモード」を有効にすると検出された領域を可視化
-- 検出結果の詳細確認が可能
+- 「🔧 デバッグモード」を有効にすると、上記の各処理ステップの途中経過画像（スクリーン検出、傾き補正後など）を画面上で確認できます。
 
-**注意**: 画像の明るさや角度によって読み取り精度が変わる場合があります。読み取りに失敗した場合は、デバッグモードで検出状況を確認するか、画像を再撮影してください。
+## 必要なもの
+
+- Python 3.8+
+- `pip`
+
+## インストール & 実行
+
+1.  **リポジトリをクローンします**
+    ```bash
+    git clone https://github.com/your-username/toppuru.git
+    cd toppuru
+    ```
+
+2.  **Pythonライブラリをインストールします**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **アプリケーションを実行します**
+    ```bash
+    streamlit run app.py
+    ```
 
 ## テスト
 
 ### 全テストの実行
 
+プロジェクトのルートディレクトリから以下のコマンドを実行します。
+
 ```bash
-python run_tests.py
+python -m unittest discover tests
+```
+または
+```bash
+python tests/run_tests.py
 ```
 
 ### 個別テストの実行
 
+`tests`ディレクトリ内の特定のテストファイルを指定して実行することも可能です。
+
 ```bash
-# points_lookup.pyのテスト
-python -m unittest test_points_lookup.py
-
-# calculate_conditions.pyのテスト
-python -m unittest test_calculate_conditions.py
-
-# app.pyのテスト
-python -m unittest test_app.py
-
-# points_table.pyのテスト
-python -m unittest test_points_table.py
+# 例: calculate_conditionsのテストを実行
+python -m unittest tests.test_calculate_conditions
 ```
-
-### テストカバレッジ
-
-現在のテストは以下の機能をカバーしています：
-
-#### points_lookup.py
-- `ceil100()` 関数の動作確認
-- `reverse_lookup()` 関数の各種ケース
-- 満貫以上の判定ロジック
-- エッジケース（0点、負の点数、非常に大きな点数）
-
-#### calculate_conditions.py
-- 基本的な条件計算
-- 積み棒・供託棒を含む計算
-- 親・子のツモ計算
-- 直撃ロンの計算
-- エッジケース（自分がトップ、大きな点差）
-
-#### app.py
-- 入力値検証機能
-- 条件スタイル設定機能
-- 各種役種のスタイル確認
-
-#### points_table.py
-- 点数表のデータ構造検証
-- 必要な組み合わせの存在確認
-- 点数の一貫性確認
-- 満貫閾値の確認
-
-#### image_processor.py
-- 画像処理機能の動作確認
-- OCR文字認識の精度確認
-- 点数表示領域の検出確認
-- 画像前処理の効果確認
 
 ## ファイル構成
 
-- `app.py` - Streamlitアプリケーション
-- `calculate_conditions.py` - 条件計算ロジック
-- `points_lookup.py` - 点数逆引きロジック
-- `points_table.py` - 点数表データ
-- `image_processor.py` - 画像処理・OCR機能
-- `test_*.py` - 単体テストファイル
-- `run_tests.py` - テスト実行スクリプト
+リファクタリングにより、責務に応じたファイル分割が行われています。
+
+- `app.py`: Streamlitアプリケーションのメインファイル。全体制御を担当。
+- `ui.py`: StreamlitのUIコンポーネント（画面描画ロジック）を格納。
+- `calculate_conditions.py`: 逆転条件の計算ロジック。
+- `points_lookup.py`: 点数から必要な役を逆引きするロジック。
+- `image_processor.py`: 画像からの点数読み取り処理ロジック。
+- `config.py`: アプリケーション全体の設定値や定数を格納。
+- `points_table.py`: 麻雀の点数表データ。
+- `styles.css`: UIのスタイルシート。
+- `requirements.txt`: Pythonの依存ライブラリリスト。
+- `debug/`: （ユーザーにより作成される）デバッグ画像用のディレクトリ。
+- `tests/`:
+  - `test_*.py`: 各モジュールに対応する単体テスト。
+  - `run_tests.py`: テストスイートを実行するためのスクリプト。
+  - `test_data/`: テスト用の画像データ。
