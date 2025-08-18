@@ -1,0 +1,26 @@
+.condition-card {
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.condition-card .title {
+    font-size: 1.3em;
+}
+
+.condition-card .rank {
+    font-size: 1.1em;
+}
+
+.condition-card .details {
+    font-size: 0.9em;
+    color: #333;
+}
+
+.bold {
+    font-weight: 700;
+}
+
+.top-diff-leader {
+    font-weight: 700;
+}

@@ -1,5 +1,112 @@
 from points_lookup import reverse_lookup, ceil100
 import math
+import config
+
+def _create_result_dict(condition_title, need_points, lookup_result, is_direct):
+    """結果を格納する辞書を作成するヘルパー関数"""
+    total_points = 0
+    opponent_loss = 0
+    difference_points = 0
+
+    raw_points = lookup_result.get('raw_points', lookup_result.get('points', 0))
+
+    if isinstance(raw_points, (int, float)):
+        total_points = int(raw_points)
+        opponent_loss = int(raw_points)
+        difference_points = total_points * 2 if is_direct else total_points
+    elif isinstance(raw_points, tuple): # 子ツモ
+        child_pay, parent_pay = raw_points
+        total_points = child_pay * 2 + parent_pay
+        opponent_loss = child_pay
+        difference_points = total_points + opponent_loss
+    else: # 満貫以上のツモ
+        total_points = lookup_result.get('total_points', 0)
+        opponent_loss = lookup_result.get('opponent_loss', 0)
+        difference_points = total_points + opponent_loss
+
+    # 'display'が数値の場合の合計点数などを再計算
+    if 'display' in lookup_result and isinstance(lookup_result['display'], (int, float)):
+         total_points = int(lookup_result['display'])
+         opponent_loss = int(lookup_result['display'])
+         difference_points = total_points * 2 if is_direct else total_points
+    
+    # 親ツモの特殊処理
+    if 'オール' in str(lookup_result.get('display', '')):
+        per_person_actual = lookup_result.get('raw_points', 0)
+        total_points = per_person_actual * 3
+        opponent_loss = per_person_actual
+        difference_points = total_points + opponent_loss
+
+    return {
+        '条件': condition_title,
+        'need_points': need_points,
+        'rank': lookup_result['rank'],
+        'display': lookup_result.get('display', lookup_result['points']),
+        'total_points': total_points,
+        'opponent_loss': opponent_loss,
+        'difference_points': difference_points,
+        'is_direct': is_direct
+    }
+
+def _calculate_direct_ron(top_diff, is_parent, tsumibo, kyotaku, leader_name, role_str):
+    """直撃ロンの条件を計算"""
+    kyotaku_points = kyotaku * config.POINTS_PER_KYOTAKU
+    tsumibo_points = tsumibo * config.POINTS_PER_TSUMIBO_RON
+    
+    needed_score = ceil100((top_diff - kyotaku_points - tsumibo_points) / 2)
+    needed_score = max(0, needed_score)
+    
+    lookup_result = reverse_lookup(needed_score, 'ron', is_parent)
+    
+    title = f'直撃ロン（{leader_name}）（{role_str}）'
+    return _create_result_dict(title, needed_score, lookup_result, is_direct=True)
+
+def _calculate_other_ron(top_diff, is_parent, tsumibo, kyotaku, role_str):
+    """他家ロンの条件を計算"""
+    kyotaku_points = kyotaku * config.POINTS_PER_KYOTAKU
+    tsumibo_points = tsumibo * config.POINTS_PER_TSUMIBO_RON
+    
+    needed_score = top_diff - kyotaku_points - tsumibo_points
+    needed_score = ceil100(max(0, needed_score))
+    
+    lookup_result = reverse_lookup(needed_score, 'ron', is_parent)
+
+    title = f'他家放銃ロン（{role_str}）'
+    return _create_result_dict(title, needed_score, lookup_result, is_direct=False)
+
+def _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str):
+    """ツモ和了の条件を計算"""
+    kyotaku_points = kyotaku * config.POINTS_PER_KYOTAKU
+    tsumo_tsumibo_points = tsumibo * config.POINTS_PER_TSUMIBO_TSUMO # 1本場につき100点ずつ増える
+
+    if is_parent:
+        # 親ツモ：全員から支払い
+        needed_per_person = ceil100((top_diff - kyotaku_points) / 3)
+        needed_per_person -= tsumo_tsumibo_points
+        needed_per_person = max(0, needed_per_person)
+        lookup_result = reverse_lookup(needed_per_person, 'tsumo', True)
+    else:
+        # 子ツモ：親は子の倍払う
+        needed_child_pay = ceil100((top_diff - kyotaku_points) / 4)
+        needed_child_pay -= tsumo_tsumibo_points
+        needed_child_pay = max(0, needed_child_pay)
+        lookup_result = reverse_lookup(needed_child_pay, 'tsumo', False)
+
+    needed_score = needed_per_person if is_parent else needed_child_pay
+    title = f'ツモ（{role_str}）'
+    result = _create_result_dict(title, needed_score, lookup_result, is_direct=False)
+
+    # ツモの場合の合計点を再計算
+    if is_parent:
+        per_person_actual = lookup_result.get('raw_points', 0)
+        result['total_points'] = per_person_actual * 3
+        result['opponent_loss'] = per_person_actual
+    else:
+        child_pay, parent_pay = lookup_result.get('raw_points', (0,0))
+        result['total_points'] = child_pay * 2 + parent_pay
+        result['opponent_loss'] = f"{child_pay} / {parent_pay}"
+
+    return result
 
 def calculate_conditions(scores, oya, tsumibo, kyotaku):
     me = '自分'
@@ -7,189 +114,16 @@ def calculate_conditions(scores, oya, tsumibo, kyotaku):
         raise ValueError('scores must include "自分"')
 
     leader = max(scores, key=lambda k: (scores[k], k))
-    leader_score = scores[leader]
     my_score = scores[me]
-    top_diff = leader_score - my_score + 1
+    top_diff = scores[leader] - my_score + 1
 
     is_parent = (oya == me)
     role_str = "親" if is_parent else "子"
 
-    results = []
-
-    # 1. まず逆転に必要な点数を計算（供託棒・積み棒なし）
-    need_for_reverse = top_diff
-
-    # 2. Direct Ron (from leader) - 直撃時は点差を倍縮まる
-    
-    # 3. 供託棒と積み棒を差し引く
-    kyotaku_points = kyotaku * 1000
-    tsumibo_points = tsumibo * 300  # ロン時の積み棒
-    
-    # 実際に必要な点数 = (逆転に必要な点数 - 供託棒 - 積み棒) / 2
-    actual_need_direct = ceil100((need_for_reverse - kyotaku_points - tsumibo_points) / 2)
-    actual_need_direct = max(0, actual_need_direct)
-    
-    # 必要に応じてより高い点数を検索
-    rev_direct = reverse_lookup(actual_need_direct, 'ron', is_parent)
-    
-    # 直撃時の合計点数と相手のマイナス点数を計算
-    if isinstance(rev_direct['points'], (int, float)):
-        total_points = int(rev_direct['points'])
-        opponent_loss = int(rev_direct['points'])
-    elif isinstance(rev_direct['points'], str):
-        # 文字列の数値の場合
-        try:
-            points_val = float(rev_direct['points'])
-            total_points = int(points_val)
-            opponent_loss = int(points_val)
-        except ValueError:
-            # 文字列形式の場合はそのまま使用
-            total_points = rev_direct['points']
-            opponent_loss = rev_direct['points']
-    else:
-        total_points = rev_direct['points']
-        opponent_loss = rev_direct['points']
-    
-    # 差分点数を計算
-    if isinstance(opponent_loss, str):
-        difference_points = total_points
-    else:
-        difference_points = total_points + opponent_loss
-    
-    results.append({
-        '条件': f'直撃ロン（{leader}）（{role_str}）',
-        'need_points': actual_need_direct,
-        'rank': rev_direct['rank'],
-        'display': rev_direct.get('display', rev_direct['points']),
-        'total_points': total_points,
-        'opponent_loss': opponent_loss,
-        'difference_points': difference_points,
-        'is_direct': True
-    })
-
-    # 4. Other Ron (no name)
-    need_other = need_for_reverse  # 他家放銃時は点差そのまま
-    need_other = ceil100(need_other)
-    rev_other = reverse_lookup(need_other, 'ron', is_parent)
-    
-    # 供託棒と積み棒を差し引く
-    actual_need_other = need_other - kyotaku_points - tsumibo_points
-    actual_need_other = max(0, actual_need_other)
-    
-    # 必要に応じてより高い点数を検索
-    if actual_need_other > 0:
-        rev_other = reverse_lookup(actual_need_other, 'ron', is_parent)
-    
-    # 他家放銃時の合計点数と相手のマイナス点数
-    if isinstance(rev_other['points'], (int, float)):
-        total_points = int(rev_other['points'])
-        opponent_loss = int(rev_other['points'])
-    elif isinstance(rev_other['points'], str):
-        # 文字列の数値の場合
-        try:
-            points_val = float(rev_other['points'])
-            total_points = int(points_val)
-            opponent_loss = int(points_val)
-        except ValueError:
-            # 文字列形式の場合はそのまま使用
-            total_points = rev_other['points']
-            opponent_loss = rev_other['points']
-    else:
-        total_points = rev_other['points']
-        opponent_loss = rev_other['points']
-    
-    # 差分点数を計算
-    if isinstance(opponent_loss, str):
-        difference_points = total_points
-    else:
-        difference_points = total_points + opponent_loss
-    
-    results.append({
-        '条件': f'他家放銃ロン（{role_str}）',
-        'need_points': actual_need_other,
-        'rank': rev_other['rank'],
-        'display': rev_other.get('display', rev_other['points']),
-        'total_points': total_points,
-        'opponent_loss': opponent_loss,
-        'difference_points': difference_points,
-        'is_direct': False
-    })
-
-    # 5. Tsumo - ツモ時は積み棒の計算が異なる
-    if is_parent:
-        # 親ツモ：子3人から1倍ずつ = 合計3倍
-        # まず逆転に必要な点数を3で割って、1人あたりの支払い額を計算
-        per_person = math.ceil(need_for_reverse / 3.0)
-        per_person = ceil100(per_person)
-        rev_t = reverse_lookup(per_person, 'tsumo', True)
-        
-        # ツモ時の積み棒を差し引く（親ツモ：400点×積み棒数）
-        tsumo_tsumibo_points = tsumibo * 400
-        actual_need_tsumo = per_person - (tsumo_tsumibo_points / 3)  # 1人あたりの積み棒分
-        actual_need_tsumo = max(0, actual_need_tsumo)
-        
-        # 必要に応じてより高い点数を検索
-        if actual_need_tsumo > 0:
-            rev_t = reverse_lookup(actual_need_tsumo, 'tsumo', True)
-        
-        # 親ツモの合計点数と相手のマイナス点数
-        per_person_actual = rev_t.get('raw_points', 0)
-        total_points = per_person_actual * 3
-        opponent_loss = per_person_actual
-        
-        # 差分点数を計算
-        if isinstance(opponent_loss, str):
-            difference_points = total_points
-        else:
-            difference_points = total_points + opponent_loss
-        
-        results.append({
-            '条件': f'ツモ（{role_str}）',
-            'need_points': actual_need_tsumo,
-            'rank': rev_t['rank'],
-            'display': rev_t.get('display', rev_t['points']),
-            'total_points': total_points,
-            'opponent_loss': opponent_loss,
-            'difference_points': difference_points,
-            'is_direct': False
-        })
-    else:
-        # 子ツモ：親1人から2倍、子2人から1倍ずつ = 合計4倍
-        # まず逆転に必要な点数を4で割って、子の支払い額を基準に計算
-        child_payment = math.ceil(need_for_reverse / 4.0)
-        child_payment = ceil100(child_payment)
-        
-        rev_t = reverse_lookup(child_payment, 'tsumo', False)
-        
-        # ツモ時の積み棒を差し引く（子ツモ：400点×積み棒数）
-        tsumo_tsumibo_points = tsumibo * 400
-        actual_need_tsumo = child_payment - (tsumo_tsumibo_points / 4)  # 1人あたりの積み棒分
-        actual_need_tsumo = max(0, actual_need_tsumo)
-        
-        # 必要に応じてより高い点数を検索
-        if actual_need_tsumo > 0:
-            rev_t = reverse_lookup(actual_need_tsumo, 'tsumo', False)
-        
-        # 子ツモの合計点数と相手のマイナス点数
-        child_pay, parent_pay = rev_t.get('raw_points', (0, 0))
-        total_points = child_pay * 2 + parent_pay
-        opponent_loss = child_pay
-        
-        # 差分点数を計算
-        if isinstance(opponent_loss, str):
-            difference_points = total_points
-        else:
-            difference_points = total_points + opponent_loss
-        
-        results.append({
-            '条件': f'ツモ（{role_str}）',
-            'need_points': actual_need_tsumo,
-            'rank': rev_t['rank'],
-            'display': rev_t.get('display', rev_t['points']),
-            'total_points': total_points,
-            'opponent_loss': opponent_loss,
-            'difference_points': difference_points,
-            'is_direct': False
-        })
+    results = [
+        _calculate_direct_ron(top_diff, is_parent, tsumibo, kyotaku, leader, role_str),
+        _calculate_other_ron(top_diff, is_parent, tsumibo, kyotaku, role_str),
+        _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str)
+    ]
 
     return {'top_diff': top_diff, 'leader': leader, 'results': results}

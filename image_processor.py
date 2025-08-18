@@ -2,51 +2,55 @@ import cv2
 import numpy as np
 from PIL import Image
 from typing import Dict, Optional, Tuple, List, Any
+import config
 
 class ScoreImageProcessor:
     """スリムスコア28Sの点数表示を読み取るクラス"""
     
     def __init__(self):
-        self.min_score = 1000
-        self.max_score = 99999
-        self.expected_digits = 5
-        self.seven_segment_patterns = {
-            (True, True, True, True, True, True, False): 0, (False, True, True, False, False, False, False): 1,
-            (True, True, False, True, True, False, True): 2, (True, True, True, True, False, False, True): 3,
-            (False, True, True, False, False, True, True): 4, (True, False, True, True, False, True, True): 5,
-            (True, False, True, True, True, True, True): 6, (True, True, True, False, False, False, False): 7,
-            (True, True, True, True, True, True, True): 8, (True, True, True, True, False, True, True): 9,
-        }
+        # 設定をconfigから読み込む
+        self.min_score = config.MIN_SCORE
+        self.max_score = config.MAX_SCORE
+        self.expected_digits = config.EXPECTED_DIGITS
+        self.seven_segment_patterns = config.SEVEN_SEGMENT_PATTERNS
 
     def _find_main_score_frame(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lower_white = np.array([0, 0, 150])
-        upper_white = np.array([180, 50, 255])
-        mask = cv2.inRange(hsv, lower_white, upper_white)
-        kernel = np.ones((5,5),np.uint8)
-        dilated = cv2.dilate(mask, kernel, iterations = 2)
-        eroded = cv2.erode(dilated, kernel, iterations = 2)
+        mask = cv2.inRange(hsv, config.HSV_LOWER_WHITE, config.HSV_UPPER_WHITE)
+
+        dilate_kernel = np.ones(config.FRAME_DILATE_KERNEL_SIZE, np.uint8)
+        erode_kernel = np.ones(config.FRAME_ERODE_KERNEL_SIZE, np.uint8)
+
+        dilated = cv2.dilate(mask, dilate_kernel, iterations = 2)
+        eroded = cv2.erode(dilated, erode_kernel, iterations = 2)
+
         contours, _ = cv2.findContours(eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours: return None
+
         main_contour = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(main_contour)
         img_area = image.shape[0] * image.shape[1]
         contour_area = w * h
-        if not (img_area * 0.01 < contour_area < img_area * 0.9):
+
+        min_area = img_area * config.FRAME_CONTOUR_AREA_MIN_RATIO
+        max_area = img_area * config.FRAME_CONTOUR_AREA_MAX_RATIO
+
+        if not (min_area < contour_area < max_area):
             return None
         return (x, y, w, h)
 
     def _find_inner_lcd_screen_contour(self, image: np.ndarray) -> Optional[np.ndarray]:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lower_lcd_blue = np.array([85, 50, 100])
-        upper_lcd_blue = np.array([105, 255, 255])
-        mask = cv2.inRange(hsv, lower_lcd_blue, upper_lcd_blue)
-        kernel = np.ones((5,5), np.uint8)
-        morphed_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+        mask = cv2.inRange(hsv, config.HSV_LOWER_LCD_BLUE, config.HSV_UPPER_LCD_BLUE)
+
+        kernel = np.ones(config.LCD_MORPH_CLOSE_KERNEL_SIZE, np.uint8)
+        morphed_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=config.LCD_MORPH_CLOSE_ITERATIONS)
+
         contours, _ = cv2.findContours(morphed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours: return None
+
         main_contour = max(contours, key=cv2.contourArea)
-        min_area = image.shape[0] * image.shape[1] * 0.05
+        min_area = image.shape[0] * image.shape[1] * config.LCD_CONTOUR_AREA_MIN_RATIO
         if cv2.contourArea(main_contour) < min_area:
             return None
         return main_contour
@@ -76,14 +80,14 @@ class ScoreImageProcessor:
         for i in range(self.expected_digits):
             x_start = i * digit_width
             x_end = (i + 1) * digit_width
-            margin = int(digit_width * 0.05)
+            margin = int(digit_width * config.DIGIT_MARGIN_RATIO)
             digit_slice = image[:, x_start + margin : x_end - margin]
             if digit_slice.size == 0: continue
             contours, _ = cv2.findContours(digit_slice.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if contours:
                 final_contour = max(contours, key=cv2.contourArea)
                 x_b, y_b, w_b, h_b = cv2.boundingRect(final_contour)
-                if w_b > 5 and h_b > 10:
+                if w_b > config.DIGIT_MIN_WIDTH and h_b > config.DIGIT_MIN_HEIGHT:
                     results.append(digit_slice[y_b:y_b+h_b, x_b:x_b+w_b])
                 else:
                     results.append(digit_slice)
@@ -96,8 +100,11 @@ class ScoreImageProcessor:
 
     def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """ハフ変換で画像のせん断を補正し、補正後の画像と角度を返す"""
-        edges = cv2.Canny(image, 50, 150, apertureSize=3)
-        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=5)
+        edges = cv2.Canny(image, config.HOUGH_CANNY_THRESHOLD_1, config.HOUGH_CANNY_THRESHOLD_2, apertureSize=3)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180,
+                                threshold=config.HOUGH_THRESHOLD,
+                                minLineLength=config.HOUGH_MIN_LINE_LENGTH,
+                                maxLineGap=config.HOUGH_MAX_LINE_GAP)
         if lines is None: return image, 0.0
 
         angles = []
@@ -105,14 +112,14 @@ class ScoreImageProcessor:
             x1, y1, x2, y2 = line[0]
             angle_rad = np.arctan2(y2 - y1, x2 - x1)
             angle_deg = abs(np.degrees(angle_rad))
-            if 75 < angle_deg < 105:
+            if config.HOUGH_ANGLE_MIN < angle_deg < config.HOUGH_ANGLE_MAX:
                 deviation = angle_rad - (np.pi / 2)
                 angles.append(deviation)
 
         if not angles: return image, 0.0
 
         # ヒストグラムで最頻値のビンの中心を求める
-        counts, bin_edges = np.histogram(angles, bins=20, range=(-np.pi/4, np.pi/4))
+        counts, bin_edges = np.histogram(angles, bins=config.HOUGH_ANGLE_BINS, range=config.HOUGH_ANGLE_RANGE)
         max_index = np.argmax(counts)
         dominant_deviation_rad = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
 
@@ -129,18 +136,16 @@ class ScoreImageProcessor:
     def _recognize_7_segment_digit(self, digit_image: np.ndarray) -> Optional[int]:
         if digit_image is None or digit_image.size == 0: return None
         h, w = digit_image.shape[:2]
-        if h < 10 or w < 5: return None
-        rois = {
-            'a': (0.2, 0.0, 0.8, 0.2), 'b': (0.7, 0.1, 1.0, 0.45), 'c': (0.7, 0.55, 1.0, 0.9),
-            'd': (0.2, 0.8, 0.8, 1.0), 'e': (0.0, 0.55, 0.3, 0.9), 'f': (0.0, 0.1, 0.3, 0.45),
-            'g': (0.2, 0.4, 0.8, 0.6)
-        }
+        if h < config.DIGIT_MIN_HEIGHT or w < config.DIGIT_MIN_WIDTH: return None
+
+        rois = config.SEVEN_SEGMENT_ROIS
+
         def is_on(segment_roi):
             x1, y1, x2, y2 = segment_roi
             roi_abs = digit_image[int(y1*h):int(y2*h), int(x1*w):int(x2*w)]
             if roi_abs.size == 0: return False
             active_pixels = np.count_nonzero(roi_abs)
-            return (active_pixels / roi_abs.size) > 0.1 if roi_abs.size > 0 else False
+            return (active_pixels / roi_abs.size) > config.SEGMENT_ACTIVATION_THRESHOLD if roi_abs.size > 0 else False
         try:
             pattern = tuple(is_on(rois[seg]) for seg in ['a', 'b', 'c', 'd', 'e', 'f', 'g'])
             return self.seven_segment_patterns.get(pattern)
@@ -165,8 +170,13 @@ class ScoreImageProcessor:
     def split_screen_into_regions(self, screen_image: np.ndarray) -> Dict[str, np.ndarray]:
         if screen_image is None or screen_image.size == 0: return {}
         h, w = screen_image.shape[:2]
-        total_parts, x1_split, x2_split = 7, int(2 * (w / 7)), int(5 * (w / 7))
-        left_img, middle_img, right_img = screen_image[:, 0:x1_split], screen_image[:, x1_split:x2_split], screen_image[:, x2_split:w]
+        x1_split = int(w * config.SCREEN_X1_SPLIT_RATIO)
+        x2_split = int(w * config.SCREEN_X2_SPLIT_RATIO)
+
+        left_img = screen_image[:, 0:x1_split]
+        middle_img = screen_image[:, x1_split:x2_split]
+        right_img = screen_image[:, x2_split:w]
+
         mid_h = middle_img.shape[0] // 2
         return {'上家': left_img, '対面': middle_img[0:mid_h, :], '自分': middle_img[mid_h:, :], '下家': right_img}
     
@@ -205,68 +215,61 @@ class ScoreImageProcessor:
             print(f"OCR読み取りエラー: {player} - {e}")
             return None
 
-    def process_score_image(self, image: np.ndarray) -> Dict[str, int]:
-        """画像から全プレイヤーの点数を読み取り（新しいパイプライン）"""
-        warped_screen = self.detect_and_warp_screen(image)
-        if warped_screen is None: return {}
-        
-        gray = cv2.cvtColor(warped_screen, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        kernel = np.ones((3,3), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-
-        corrected_binary, _ = self._correct_shear(binary)
-
-        region_images = self.split_screen_into_regions(corrected_binary)
-
-        scores = {}
-        for player, region_image in region_images.items():
-            if player != '自分':
-                h, w = region_image.shape
-                region_image = region_image[0:int(h * 0.7)]
-
-            score = self._process_player_score(region_image, player)
-            if score is not None:
-                scores[player] = score
-        return scores
-
-    def process_uploaded_image(self, uploaded_file) -> Dict[str, int]:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        if image is None: raise ValueError("アップロードされた画像を読み込めませんでした")
-        return self.process_score_image(image)
-
-    def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
+    def _image_processing_pipeline(self, image: np.ndarray, debug=False) -> Dict[str, Any]:
+        """画像処理のメインパイプライン。通常処理とデバッグ処理を統合。"""
         debug_bundle = {}
+
         warped_screen = self.detect_and_warp_screen(image)
         if warped_screen is None:
-            debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
-            cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            return debug_bundle
-        debug_bundle['warped_screen'] = warped_screen
+            if debug:
+                debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
+                cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                return debug_bundle
+            else:
+                return {}
+
+        if debug:
+            debug_bundle['warped_screen'] = warped_screen
 
         gray = cv2.cvtColor(warped_screen, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        blurred = cv2.GaussianBlur(gray, config.GAUSSIAN_BLUR_KERNEL_SIZE, 0)
         _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        kernel = np.ones((3,3), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        kernel = np.ones(config.BINARY_MORPH_OPEN_KERNEL_SIZE, np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=config.BINARY_MORPH_OPEN_ITERATIONS)
 
         corrected_binary, angle = self._correct_shear(binary)
-        debug_bundle['shear_corrected_screen'] = corrected_binary
-        debug_bundle['shear_angles'] = {'screen': angle}
+        if debug:
+            debug_bundle['shear_corrected_screen'] = corrected_binary
+            debug_bundle['shear_angles'] = {'screen': angle}
 
         region_images = self.split_screen_into_regions(corrected_binary)
-        deskewed_digits_by_player = {}
 
-        for player, region_image in region_images.items():
-            if player != '自分':
-                h, w = region_image.shape
-                region_image = region_image[0:int(h * 0.7)]
+        if debug:
+            deskewed_digits_by_player = {}
+            for player, region_image in region_images.items():
+                if player != '自分':
+                    h, w = region_image.shape
+                    region_image = region_image[0:int(h * config.PLAYER_REGION_CROP_RATIO)]
+                digits = self._split_digits(region_image)
+                deskewed_digits_by_player[player] = digits if digits else []
+            debug_bundle['deskewed_digits'] = deskewed_digits_by_player
+            return debug_bundle
+        else:
+            scores = {}
+            for player, region_image in region_images.items():
+                if player != '自分':
+                    h, w = region_image.shape
+                    region_image = region_image[0:int(h * config.PLAYER_REGION_CROP_RATIO)]
+                score = self._process_player_score(region_image, player)
+                if score is not None:
+                    scores[player] = score
+            return scores
 
-            # For display, split the corrected regions.
-            digits = self._split_digits(region_image)
-            deskewed_digits_by_player[player] = digits if digits else []
+    def process_score_image(self, image: np.ndarray) -> Dict[str, int]:
+        """画像から全プレイヤーの点数を読み取る"""
+        return self._image_processing_pipeline(image, debug=False)
 
-        debug_bundle['deskewed_digits'] = deskewed_digits_by_player
-        return debug_bundle
+    def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
+        """デバッグ用の途中経過画像をすべて取得する"""
+        return self._image_processing_pipeline(image, debug=True)
