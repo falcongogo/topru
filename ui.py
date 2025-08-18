@@ -8,7 +8,7 @@ from PIL import Image
 import config
 from image_processor import ScoreImageProcessor
 
-def process_uploaded_image(uploaded_file) -> Dict[str, Any]:
+def process_uploaded_image(uploaded_file, shear_method: str, manual_angle: float) -> Dict[str, Any]:
     """アップロードされた画像を処理して点数とステータスを返す"""
     if 'image_processor' not in st.session_state or st.session_state.image_processor is None:
         try:
@@ -22,7 +22,9 @@ def process_uploaded_image(uploaded_file) -> Dict[str, Any]:
         if image is None:
             raise ValueError("アップロードされた画像を読み込めませんでした")
 
-        scores = st.session_state.image_processor.process_score_image(image)
+        scores = st.session_state.image_processor.process_score_image(
+            image, shear_correction_method=shear_method, manual_shear_angle=manual_angle
+        )
 
         if not scores:
             return {'status': 'warning', 'message': "点数を読み取れませんでした。画像の角度や明るさを確認してください。"}
@@ -32,7 +34,7 @@ def process_uploaded_image(uploaded_file) -> Dict[str, Any]:
     except Exception as e:
         return {'status': 'error', 'message': f"画像処理中にエラーが発生しました: {str(e)}"}
 
-def process_uploaded_image_full_debug(uploaded_file):
+def process_uploaded_image_full_debug(uploaded_file, shear_method: str, manual_angle: float):
     """アップロードされた画像を処理して詳細なデバッグ情報を取得"""
     if 'image_processor' not in st.session_state or st.session_state.image_processor is None:
         try:
@@ -48,7 +50,9 @@ def process_uploaded_image_full_debug(uploaded_file):
         if image is None:
             raise ValueError("アップロードされた画像を読み込めませんでした")
 
-        return st.session_state.image_processor.get_full_debug_bundle(image)
+        return st.session_state.image_processor.get_full_debug_bundle(
+            image, shear_correction_method=shear_method, manual_shear_angle=manual_angle
+        )
 
     except Exception as e:
         st.error(f"デバッグ処理中にエラーが発生しました: {str(e)}")
@@ -79,16 +83,43 @@ def render_image_upload_section() -> Dict[str, int]:
         help="スマホで撮影したスリムスコア28Sの点数表示画像をアップロードすると、自動的に点数を読み取ります"
     )
 
+    st.markdown("##### 画像補正設定")
+    method_options = {
+        'Hough変換': 'hough',
+        '下2桁の"00"を利用': 'zeros',
+        '角度を手動入力': 'manual',
+        '補正なし': 'none'
+    }
+    method_display = st.selectbox(
+        "せん断補正（傾き補正）の方法",
+        options=list(method_options.keys()),
+        index=0
+    )
+    shear_method = method_options[method_display]
+
+    manual_angle = 0.0
+    if shear_method == 'manual':
+        manual_angle = st.number_input(
+            "補正角度（°）",
+            min_value=-45.0,
+            max_value=45.0,
+            value=9.0,
+            step=0.1,
+            help="画像の傾き角度を度数で入力します。右に傾いている場合は正の値を入力します。"
+        )
+
     if uploaded_file is not None:
-        if uploaded_file.file_id != st.session_state.get('last_uploaded_file_id'):
+        # 新しいファイルがアップロードされたか、または補正設定が変更された場合に再処理
+        current_config_id = f"{uploaded_file.file_id}-{shear_method}-{manual_angle}"
+        if current_config_id != st.session_state.get('last_uploaded_file_id'):
             with st.spinner('画像を処理中...'):
-                result = process_uploaded_image(uploaded_file)
+                result = process_uploaded_image(uploaded_file, shear_method, manual_angle)
 
             st.session_state.ocr_status = result
             if result['status'] == 'success':
                 st.session_state.scores = result['scores']
 
-            st.session_state.last_uploaded_file_id = uploaded_file.file_id
+            st.session_state.last_uploaded_file_id = current_config_id
 
         st.image(uploaded_file, caption="アップロードされた画像", width=300)
 
@@ -97,21 +128,22 @@ def render_image_upload_section() -> Dict[str, int]:
         if debug_mode:
             st.markdown("---")
             st.subheader("🛠️ デバッグ情報")
-            if 'debug_bundle' not in st.session_state or st.session_state.last_uploaded_file_id != uploaded_file.file_id:
+            # 設定が変更されたらデバッグ情報も再生成
+            if 'debug_bundle' not in st.session_state or st.session_state.last_uploaded_file_id != current_config_id:
                 uploaded_file.seek(0)
                 with st.spinner('詳細デバッグ情報を生成中...'):
-                    st.session_state.debug_bundle = process_uploaded_image_full_debug(uploaded_file)
+                    st.session_state.debug_bundle = process_uploaded_image_full_debug(uploaded_file, shear_method, manual_angle)
+
             debug_bundle = st.session_state.get('debug_bundle')
             if debug_bundle:
-                if 'main_frame' in debug_bundle:
-                    st.image(debug_bundle['main_frame'], caption="1. メインフレーム検出", use_container_width=True, channels="BGR")
                 if 'warped_screen' in debug_bundle:
-                    st.image(debug_bundle['warped_screen'], caption="2. 傾き補正後のスクリーン", use_container_width=True, channels="BGR")
+                    st.image(debug_bundle['warped_screen'], caption="1. スクリーン領域の切り出し", use_container_width=True, channels="BGR")
                 if 'shear_corrected_screen' in debug_bundle:
-                    st.markdown("##### 3. せん断補正後のスクリーン全体")
+                    angle = debug_bundle.get('shear_angles', {}).get('screen', 0)
+                    st.markdown(f"##### 2. せん断補正後のスクリーン (補正角度: {angle:.2f}°)")
                     st.image(debug_bundle['shear_corrected_screen'], caption="スクリーン全体にせん断補正を適用", use_container_width=True)
                 if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
-                    st.markdown("##### 4. 最終的な切り出し数字")
+                    st.markdown("##### 3. 最終的な切り出し数字")
                     for player, digits in debug_bundle['deskewed_digits'].items():
                         st.write(f"**{player}**")
                         if not digits:
