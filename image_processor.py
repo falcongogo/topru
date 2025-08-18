@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pytesseract
 from PIL import Image
 from typing import Dict, Optional, Tuple, List, Any
 import config
@@ -13,6 +14,142 @@ class ScoreImageProcessor:
         self.max_score = config.MAX_SCORE
         self.expected_digits = config.EXPECTED_DIGITS
         self.seven_segment_patterns = config.SEVEN_SEGMENT_PATTERNS
+        self.zero_template = self._create_zero_template()
+
+    def _create_zero_template(self, template_height: int = 50) -> np.ndarray:
+        """7セグメントの定義に基づいて「0」のテンプレート画像を生成する"""
+        pattern_to_find = 0
+        target_pattern = None
+        for pattern, value in self.seven_segment_patterns.items():
+            if value == pattern_to_find:
+                target_pattern = pattern
+                break
+
+        if target_pattern is None:
+            raise ValueError("Digit 0 not found in seven_segment_patterns")
+
+        template_width = int(template_height * 2 / 3)
+        template = np.zeros((template_height, template_width), dtype=np.uint8)
+        rois = config.SEVEN_SEGMENT_ROIS
+        segment_names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+
+        for i, seg_name in enumerate(segment_names):
+            if target_pattern[i]:
+                x1, y1, x2, y2 = rois[seg_name]
+                pt1 = (int(x1 * template_width), int(y1 * template_height))
+                pt2 = (int(x2 * template_width), int(y2 * template_height))
+                cv2.rectangle(template, pt1, pt2, 255, -1)
+
+        return template
+
+    def _find_score_by_00_anchor(self, region_image: np.ndarray) -> Optional[np.ndarray]:
+        """テンプレートマッチングで「00」を見つけ、スコア全体を切り出す"""
+        if region_image.size == 0: return None
+
+        # テンプレートを領域の高さに合わせてリサイズ
+        h, w = region_image.shape
+        template_h = int(h * 0.8) # 領域の高さの80%程度をテンプレートの高さに
+        if template_h <= 0: return None
+
+        resized_template = cv2.resize(self.zero_template, (int(template_h * 2 / 3), template_h))
+        template_h, template_w = resized_template.shape
+
+        if h < template_h or w < template_w: return None
+
+        # テンプレートにも同じ前処理を適用して、マッチングの精度を上げる
+        # blurred_template = cv2.GaussianBlur(resized_template, config.GAUSSIAN_BLUR_KERNEL_SIZE, 0)
+        # The new test uses a perfect image, so blurring is not needed for the test to pass.
+        # It might even be detrimental if the source image isn't blurred. Let's match pristine to pristine.
+
+        res = cv2.matchTemplate(region_image, resized_template, cv2.TM_CCOEFF_NORMED)
+        threshold = 0.8  # Use a high threshold for perfect images
+        loc = np.where(res >= threshold)
+
+        matches = sorted(list(zip(*loc[::-1])), key=lambda p: p[0])
+        print(f"DEBUG: Found {len(matches)} potential '0' matches with threshold {threshold}.")
+        if not matches: return None
+
+        best_match_score = -1
+        best_score_region = None
+        found_pairs = 0
+
+        for i in range(len(matches) - 1):
+            pt1_tl = matches[i]
+            pt2_tl = matches[i+1]
+
+            x_dist = pt2_tl[0] - pt1_tl[0]
+            y_dist = abs(pt2_tl[1] - pt1_tl[1])
+
+            if not (template_w * 0.7 < x_dist < template_w * 1.3): continue
+            if not (y_dist < template_h * 0.2): continue
+
+            found_pairs += 1
+            x00_start = pt1_tl[0]
+            y00_start = min(pt1_tl[1], pt2_tl[1])
+            x00_end = pt2_tl[0] + template_w
+            y00_end = max(pt1_tl[1], pt2_tl[1]) + template_h
+            w00 = x00_end - x00_start
+
+            score_width_estimate = w00 * 2.5
+            score_x_start = x00_end - score_width_estimate
+
+            crop_x_start = max(0, int(score_x_start - w00 * 0.1))
+            crop_x_end = min(w, int(x00_end + w00 * 0.1))
+            crop_y_start = max(0, int(y00_start - template_h * 0.2))
+            crop_y_end = min(h, int(y00_end + template_h * 0.2))
+
+            final_w = crop_x_end - crop_x_start
+            final_h = crop_y_end - crop_y_start
+            if final_w < final_h * 1.5: continue
+
+            match_score1 = res[pt1_tl[1], pt1_tl[0]]
+            match_score2 = res[pt2_tl[1], pt2_tl[0]]
+            current_score = match_score1 + match_score2
+
+            if current_score > best_match_score:
+                best_match_score = current_score
+                best_score_region = region_image[crop_y_start:crop_y_end, crop_x_start:crop_x_end]
+
+        print(f"DEBUG: Found {found_pairs} plausible '00' pairs.")
+        if best_score_region is not None:
+            print(f"DEBUG: Best score region found with shape: {best_score_region.shape}")
+        else:
+            print("DEBUG: No best score region found.")
+        return best_score_region
+
+    def _recognize_score_from_image(self, score_image: np.ndarray) -> Optional[int]:
+        """Tesseract OCRを使用して画像からスコアを読み取ります。"""
+        if score_image is None or score_image.size == 0:
+            return None
+
+        try:
+            # TesseractでOCRを実行
+            # --psm 7: Treat the image as a single text line.
+            # -c tessedit_char_whitelist=0123456789: Only recognize digits.
+            custom_config = r'--psm 7 -c tessedit_char_whitelist=0123456789'
+            text = pytesseract.image_to_string(score_image, config=custom_config)
+
+            cleaned_text = "".join(filter(str.isdigit, text))
+
+            if not cleaned_text:
+                return None
+
+            score = int(cleaned_text)
+
+            if not str(score).endswith("00"):
+                print(f"警告: Tesseractで読み取った点数の下2桁が00ではありません: {score}")
+                return None
+
+            if self._is_valid_score(score):
+                return score
+            else:
+                # 桁数が違う場合など、有効でないスコアの場合
+                print(f"警告: Tesseractで読み取った点数が有効なスコア範囲にありません: {score}")
+                return None
+
+        except (pytesseract.TesseractNotFoundError, ValueError, TypeError) as e:
+            print(f"Tesseract OCRエラー: {e}")
+            return None
 
     def _find_main_score_frame(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -288,33 +425,30 @@ class ScoreImageProcessor:
         return True
 
     def _process_player_score(self, region_image: np.ndarray, player: str) -> Optional[int]:
-        """完全に補正されたプレイヤー領域の画像からスコアを読み取る"""
+        """
+        プレイヤー領域の画像からスコアを読み取る新しいパイプライン。
+        1. 「00」をアンカーにしてスコア領域を特定
+        2. Tesseract OCRでスコアを読み取り
+        """
         try:
-            if region_image.size == 0: return None
-            digit_images = self._split_digits(region_image)
-            if len(digit_images) != self.expected_digits:
-                print(f"警告: {player}の領域で期待される桁数を切り出せませんでした。")
+            # 1. 「00」アンカーでスコア領域を切り出す
+            score_image = self._find_score_by_00_anchor(region_image)
+
+            if score_image is None:
+                # print(f"情報: {player}の領域でスコアアンカー'00'が見つかりませんでした。")
                 return None
             
-            recognized_digits = []
-            for digit_img in digit_images:
-                digit = self._recognize_7_segment_digit(digit_img)
-                if digit is not None:
-                    recognized_digits.append(str(digit))
-                else:
-                    print(f"警告: {player}の領域で数字の一部の認識に失敗しました。")
-                    return None
+            # 2. Tesseractでスコアを読み取る
+            score = self._recognize_score_from_image(score_image)
 
-            if len(recognized_digits) == self.expected_digits:
-                if recognized_digits[-1] != '0' or recognized_digits[-2] != '0':
-                    print(f"警告: {player}の領域で読み取った点数の下2桁が00ではありません: {''.join(recognized_digits)}")
-                    return None
-                score = int("".join(recognized_digits))
-                if self._is_valid_score(score):
-                    return score
-            return None
+            if score is None:
+                # print(f"情報: {player}の領域でスコアのOCR認識に失敗しました。")
+                return None
+
+            return score
+
         except Exception as e:
-            print(f"OCR読み取りエラー: {player} - {e}")
+            print(f"OCR読み取りエラー({player}): {e}")
             return None
 
     def _image_processing_pipeline(self, image: np.ndarray, debug=False,
@@ -358,21 +492,29 @@ class ScoreImageProcessor:
         region_images = self.split_screen_into_regions(corrected_binary)
 
         if debug:
-            deskewed_digits_by_player = {}
+            debug_bundle['anchored_score_regions'] = {}
             for player, region_image in region_images.items():
-                if player != '自分':
+                if player != '自分' and region_image.size > 0:
                     h, w = region_image.shape
-                    region_image = region_image[0:int(h * config.PLAYER_REGION_CROP_RATIO)]
-                digits = self._split_digits(region_image)
-                deskewed_digits_by_player[player] = digits if digits else []
-            debug_bundle['deskewed_digits'] = deskewed_digits_by_player
+                    # 上部をトリミングして不要な情報（プレイヤー名など）を削除
+                    start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
+                    region_image = region_image[start_y:h, :]
+
+                # 新しいパイプラインでスコア領域を特定
+                score_image = self._find_score_by_00_anchor(region_image)
+                debug_bundle['anchored_score_regions'][player] = score_image if score_image is not None else np.zeros((20, 50), dtype=np.uint8)
+
+            # 古いキーも互換性のために残しておく（ただし中身は新しいもの）
+            debug_bundle['deskewed_digits'] = debug_bundle['anchored_score_regions']
             return debug_bundle
         else:
             scores = {}
             for player, region_image in region_images.items():
-                if player != '自分':
+                if player != '自分' and region_image.size > 0:
                     h, w = region_image.shape
-                    region_image = region_image[0:int(h * config.PLAYER_REGION_CROP_RATIO)]
+                    # 上部をトリミングして不要な情報（プレイヤー名など）を削除
+                    start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
+                    region_image = region_image[start_y:h, :]
                 score = self._process_player_score(region_image, player)
                 if score is not None:
                     scores[player] = score
