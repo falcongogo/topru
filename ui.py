@@ -104,7 +104,7 @@ def render_image_upload_section() -> Dict[str, int]:
             "補正角度（°）",
             min_value=-45.0,
             max_value=45.0,
-            value=9.0,
+            value=-13.0,
             step=0.1,
             help="画像の傾き角度を度数で入力します。右に傾いている場合は正の値を入力します。"
         )
