@@ -98,7 +98,7 @@ class ScoreImageProcessor:
         else:
             return []
 
-    def _correct_shear(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
+    def _correct_shear_hough(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """ハフ変換で画像のせん断を補正し、補正後の画像と角度を返す"""
         edges = cv2.Canny(image, config.HOUGH_CANNY_THRESHOLD_1, config.HOUGH_CANNY_THRESHOLD_2, apertureSize=3)
         lines = cv2.HoughLinesP(edges, 1, np.pi / 180,
@@ -124,6 +124,70 @@ class ScoreImageProcessor:
         dominant_deviation_rad = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
 
         # せん断係数を計算
+        shear_factor = -np.tan(dominant_deviation_rad)
+
+        M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
+        (h, w) = image.shape[:2]
+        corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+        dominant_angle_deg = np.degrees(dominant_deviation_rad)
+        return corrected_image, dominant_angle_deg
+
+    def _correct_shear_manual(self, image: np.ndarray, angle_deg: float) -> Tuple[np.ndarray, float]:
+        """指定された角度でせん断補正を行う"""
+        angle_rad = np.radians(angle_deg)
+        # 指定された傾斜角度と逆方向に補正をかけるため、tanの結果を反転させる
+        shear_factor = -np.tan(angle_rad)
+
+        M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
+        (h, w) = image.shape[:2]
+        corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+        return corrected_image, angle_deg
+
+    def _correct_shear_zeros(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
+        """下二桁の'00'を認識してせん断補正を行う"""
+        digit_images = self._split_digits(image)
+
+        if len(digit_images) < self.expected_digits:
+            return image, 0.0
+
+        zero_one = digit_images[-2]
+        zero_two = digit_images[-1]
+
+        if zero_one.size == 0 or zero_two.size == 0:
+            return image, 0.0
+
+        zeros_image = np.hstack((zero_one, zero_two))
+
+        # Cannyの前に二値化してエッジを明確にする
+        _, zeros_image_binary = cv2.threshold(zeros_image, 127, 255, cv2.THRESH_BINARY)
+        edges = cv2.Canny(zeros_image_binary, config.HOUGH_CANNY_THRESHOLD_1, config.HOUGH_CANNY_THRESHOLD_2, apertureSize=3)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180,
+                                threshold=1, minLineLength=5, maxLineGap=10) # '00'用にパラメータを調整(超寛容)
+        if lines is None:
+            return image, 0.0
+
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle_rad = np.arctan2(y2 - y1, x2 - x1)
+            angle_deg = abs(np.degrees(angle_rad))
+            if 80 < angle_deg < 100: # 垂直に近い線のみを対象
+                deviation = angle_rad - (np.pi / 2)
+                angles.append(deviation)
+
+        if not angles:
+            return image, 0.0
+
+        counts, bin_edges = np.histogram(angles, bins=config.HOUGH_ANGLE_BINS, range=(-np.pi/9, np.pi/9)) # 20度以内
+        if np.sum(counts) == 0:
+            return image, 0.0
+
+        max_index = np.argmax(counts)
+        dominant_deviation_rad = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
+
+        # 検出された傾きと逆方向に補正するため、tanの結果を反転
         shear_factor = -np.tan(dominant_deviation_rad)
 
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
@@ -215,7 +279,9 @@ class ScoreImageProcessor:
             print(f"OCR読み取りエラー: {player} - {e}")
             return None
 
-    def _image_processing_pipeline(self, image: np.ndarray, debug=False) -> Dict[str, Any]:
+    def _image_processing_pipeline(self, image: np.ndarray, debug=False,
+                                   shear_correction_method: str = 'hough',
+                                   manual_shear_angle: float = 0.0) -> Dict[str, Any]:
         """画像処理のメインパイプライン。通常処理とデバッグ処理を統合。"""
         debug_bundle = {}
 
@@ -238,7 +304,15 @@ class ScoreImageProcessor:
         kernel = np.ones(config.BINARY_MORPH_OPEN_KERNEL_SIZE, np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=config.BINARY_MORPH_OPEN_ITERATIONS)
 
-        corrected_binary, angle = self._correct_shear(binary)
+        if shear_correction_method == 'hough':
+            corrected_binary, angle = self._correct_shear_hough(binary)
+        elif shear_correction_method == 'manual':
+            corrected_binary, angle = self._correct_shear_manual(binary, manual_shear_angle)
+        elif shear_correction_method == 'zeros':
+            corrected_binary, angle = self._correct_shear_zeros(binary)
+        else:
+            corrected_binary, angle = binary, 0.0
+
         if debug:
             debug_bundle['shear_corrected_screen'] = corrected_binary
             debug_bundle['shear_angles'] = {'screen': angle}
@@ -266,10 +340,10 @@ class ScoreImageProcessor:
                     scores[player] = score
             return scores
 
-    def process_score_image(self, image: np.ndarray) -> Dict[str, int]:
+    def process_score_image(self, image: np.ndarray, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, int]:
         """画像から全プレイヤーの点数を読み取る"""
-        return self._image_processing_pipeline(image, debug=False)
+        return self._image_processing_pipeline(image, debug=False, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
 
-    def get_full_debug_bundle(self, image: np.ndarray) -> Dict[str, Any]:
+    def get_full_debug_bundle(self, image: np.ndarray, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
         """デバッグ用の途中経過画像をすべて取得する"""
-        return self._image_processing_pipeline(image, debug=True)
+        return self._image_processing_pipeline(image, debug=True, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
