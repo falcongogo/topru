@@ -18,7 +18,6 @@ class ScoreImageProcessor:
         self.template_00 = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
         if self.template_00 is None:
             print(f"警告: テンプレート画像が見つかりません: {template_path}。アンカーベースの探索は無効になります。")
-            # Create a dummy template to avoid crashes
             self.template_00 = np.zeros((10, 10), dtype=np.uint8)
 
     def _find_score_by_00_anchor(self, region_image: np.ndarray) -> Optional[np.ndarray]:
@@ -34,21 +33,18 @@ class ScoreImageProcessor:
         res = cv2.matchTemplate(region_image, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
-        threshold = 0.6  # ユーザーからのフィードバックに基づき、閾値を緩和
+        threshold = 0.6
         if max_val < threshold:
             return None
 
         tl = max_loc
 
-        # Estimate bounding box for the full 5-digit score
         w00 = tw
-        # Assuming the width of "00" is roughly 2/5 of the total score width
         score_width_estimate = w00 * (5 / 2)
         score_x_start = (tl[0] + tw) - score_width_estimate
 
         crop_x_start = max(0, int(score_x_start))
         crop_x_end = tl[0] + tw
-        # Give some vertical padding based on template height
         y_padding = int(th * 0.2)
         crop_y_start = max(0, tl[1] - y_padding)
         crop_y_end = min(h, tl[1] + th + y_padding)
