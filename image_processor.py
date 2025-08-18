@@ -34,7 +34,7 @@ class ScoreImageProcessor:
         res = cv2.matchTemplate(region_image, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
-        threshold = 0.7
+        threshold = 0.6  # ユーザーからのフィードバックに基づき、閾値を緩和
         if max_val < threshold:
             return None
 
