@@ -129,6 +129,7 @@ class ScoreImageProcessor:
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        _, corrected_image = cv2.threshold(corrected_image, 127, 255, cv2.THRESH_BINARY)
 
         dominant_angle_deg = np.degrees(dominant_deviation_rad)
         return corrected_image, dominant_angle_deg
@@ -142,6 +143,7 @@ class ScoreImageProcessor:
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        _, corrected_image = cv2.threshold(corrected_image, 127, 255, cv2.THRESH_BINARY)
 
         return corrected_image, angle_deg
 
@@ -193,6 +195,7 @@ class ScoreImageProcessor:
         M = np.array([[1, shear_factor, 0], [0, 1, 0]], dtype=np.float32)
         (h, w) = image.shape[:2]
         corrected_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        _, corrected_image = cv2.threshold(corrected_image, 127, 255, cv2.THRESH_BINARY)
 
         dominant_angle_deg = np.degrees(dominant_deviation_rad)
         return corrected_image, dominant_angle_deg
