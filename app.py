@@ -35,6 +35,7 @@ def main():
     results_container = st.container()
     
     if st.button('計算', type='primary'):
+        st.session_state.ocr_status = None # 計算実行時にOCRメッセージをクリア
         if not ui.validate_inputs(scores, tsumibo, kyotaku):
             return
         

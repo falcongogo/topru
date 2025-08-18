@@ -8,14 +8,13 @@ from PIL import Image
 import config
 from image_processor import ScoreImageProcessor
 
-def process_uploaded_image(uploaded_file) -> Dict[str, int]:
-    """アップロードされた画像を処理して点数を取得"""
+def process_uploaded_image(uploaded_file) -> Dict[str, Any]:
+    """アップロードされた画像を処理して点数とステータスを返す"""
     if 'image_processor' not in st.session_state or st.session_state.image_processor is None:
         try:
             st.session_state.image_processor = ScoreImageProcessor()
         except Exception as e:
-            st.error(f"画像処理モジュールの初期化に失敗しました: {str(e)}")
-            return {}
+            return {'status': 'error', 'message': f"画像処理モジュールの初期化に失敗しました: {str(e)}"}
 
     try:
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
@@ -24,11 +23,14 @@ def process_uploaded_image(uploaded_file) -> Dict[str, int]:
             raise ValueError("アップロードされた画像を読み込めませんでした")
 
         scores = st.session_state.image_processor.process_score_image(image)
-        return scores
+
+        if not scores:
+            return {'status': 'warning', 'message': "点数を読み取れませんでした。画像の角度や明るさを確認してください。"}
+
+        return {'status': 'success', 'scores': scores, 'message': f"点数を読み取りました: {scores}"}
 
     except Exception as e:
-        st.error(f"画像処理中にエラーが発生しました: {str(e)}")
-        return {}
+        return {'status': 'error', 'message': f"画像処理中にエラーが発生しました: {str(e)}"}
 
 def process_uploaded_image_full_debug(uploaded_file):
     """アップロードされた画像を処理して詳細なデバッグ情報を取得"""
@@ -58,6 +60,18 @@ def render_image_upload_section() -> Dict[str, int]:
 
     if 'last_uploaded_file_id' not in st.session_state:
         st.session_state.last_uploaded_file_id = None
+    if 'ocr_status' not in st.session_state:
+        st.session_state.ocr_status = None
+
+    # セッション状態からOCRの結果メッセージを表示
+    if st.session_state.ocr_status:
+        status = st.session_state.ocr_status
+        if status['status'] == 'success':
+            st.success(status['message'])
+        elif status['status'] == 'warning':
+            st.warning(status['message'])
+        elif status['status'] == 'error':
+            st.error(status['message'])
 
     uploaded_file = st.file_uploader(
         "スリムスコア28Sの点数表示画像をアップロードしてください",
@@ -66,15 +80,14 @@ def render_image_upload_section() -> Dict[str, int]:
     )
 
     if uploaded_file is not None:
-        if uploaded_file.file_id != st.session_state.last_uploaded_file_id:
+        if uploaded_file.file_id != st.session_state.get('last_uploaded_file_id'):
             with st.spinner('画像を処理中...'):
-                scores = process_uploaded_image(uploaded_file)
+                result = process_uploaded_image(uploaded_file)
 
-            if scores:
-                st.success(f"点数を読み取りました: {scores}")
-                st.session_state.scores = scores
-            else:
-                st.warning("点数を読み取れませんでした。画像の角度や明るさを確認してください。")
+            st.session_state.ocr_status = result
+            if result['status'] == 'success':
+                st.session_state.scores = result['scores']
+
             st.session_state.last_uploaded_file_id = uploaded_file.file_id
 
         st.image(uploaded_file, caption="アップロードされた画像", width=300)
