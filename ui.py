@@ -94,7 +94,7 @@ def render_image_upload_section() -> Dict[str, int]:
     method_display = st.selectbox(
         "せん断補正（傾き補正）の方法",
         options=list(method_options.keys()),
-        index=0
+        index=1
     )
     shear_method = method_options[method_display]
 

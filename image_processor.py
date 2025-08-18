@@ -73,29 +73,63 @@ class ScoreImageProcessor:
         warped = cv2.warpPerspective(image, M, (w, h))
         return warped
 
-    def _split_digits(self, image: np.ndarray) -> List[np.ndarray]:
-        h, w = image.shape[:2]
-        digit_width = w // self.expected_digits
+    def _split_digits(self, image: np.ndarray, tight_crop: bool = True) -> List[np.ndarray]:
+        """Finds the bounding box of all digits, then slices them based on that box."""
+        # Find the bounding box of all digit contours combined
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return []
+
+        # Filter out very small noise contours before finding the main bounding box
+        min_contour_area = 5  # A small threshold to filter noise
+        valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
+        if not valid_contours:
+            return []
+
+        all_points = np.vstack(valid_contours)
+        x, y, w, h = cv2.boundingRect(all_points)
+
+        # Crop the image to the bounding box of all digits
+        digit_block = image[y:y+h, x:x+w]
+
+        # Slice the digit block into individual digits
+        h_block, w_block = digit_block.shape[:2]
+        digit_width = w_block / self.expected_digits  # Use float for more precision
         results = []
+
         for i in range(self.expected_digits):
-            x_start = i * digit_width
-            x_end = (i + 1) * digit_width
-            margin = int(digit_width * config.DIGIT_MARGIN_RATIO)
-            digit_slice = image[:, x_start + margin : x_end - margin]
-            if digit_slice.size == 0: continue
-            contours, _ = cv2.findContours(digit_slice.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours:
-                final_contour = max(contours, key=cv2.contourArea)
-                x_b, y_b, w_b, h_b = cv2.boundingRect(final_contour)
-                if w_b > config.DIGIT_MIN_WIDTH and h_b > config.DIGIT_MIN_HEIGHT:
-                    results.append(digit_slice[y_b:y_b+h_b, x_b:x_b+w_b])
+            x_start = int(i * digit_width)
+            x_end = int((i + 1) * digit_width)
+
+            # Slice the digit from the block
+            digit_slice = digit_block[:, x_start:x_end]
+
+            if digit_slice.size == 0:
+                continue
+
+            if not tight_crop:
+                results.append(digit_slice)
+                continue
+
+            # Find the tight bounding box for the digit within the slice
+            slice_contours, _ = cv2.findContours(digit_slice.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if slice_contours:
+                main_contour = max(slice_contours, key=cv2.contourArea)
+                sx, sy, sw, sh = cv2.boundingRect(main_contour)
+
+                # Ensure the detected contour is reasonably sized
+                if sw > config.DIGIT_MIN_WIDTH and sh > config.DIGIT_MIN_HEIGHT:
+                    results.append(digit_slice[sy:sy+sh, sx:sx+sw])
                 else:
-                    results.append(digit_slice)
+                    results.append(digit_slice) # Append the slice if contour is too small
             else:
-                 results.append(digit_slice)
+                results.append(digit_slice) # Append the slice if no contour found
+
+        # Ensure we have the correct number of digits before returning
         if len(results) == self.expected_digits:
             return results
         else:
+            # This can happen if some slices are empty or detection fails
             return []
 
     def _correct_shear_hough(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
@@ -149,7 +183,8 @@ class ScoreImageProcessor:
 
     def _correct_shear_zeros(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """下二桁の'00'を認識してせん断補正を行う"""
-        digit_images = self._split_digits(image)
+        # Get uniformly sized slices for hstack
+        digit_images = self._split_digits(image, tight_crop=False)
 
         if len(digit_images) < self.expected_digits:
             return image, 0.0
@@ -343,10 +378,10 @@ class ScoreImageProcessor:
                     scores[player] = score
             return scores
 
-    def process_score_image(self, image: np.ndarray, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, int]:
+    def process_score_image(self, image: np.ndarray, shear_correction_method: str = 'zeros', manual_shear_angle: float = 0.0) -> Dict[str, int]:
         """画像から全プレイヤーの点数を読み取る"""
         return self._image_processing_pipeline(image, debug=False, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
 
-    def get_full_debug_bundle(self, image: np.ndarray, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
+    def get_full_debug_bundle(self, image: np.ndarray, shear_correction_method: str = 'zeros', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
         """デバッグ用の途中経過画像をすべて取得する"""
         return self._image_processing_pipeline(image, debug=True, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
