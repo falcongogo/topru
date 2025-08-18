@@ -86,15 +86,15 @@ def render_image_upload_section() -> Dict[str, int]:
 
     st.markdown("##### 画像補正設定")
     method_options = {
+        '角度を手動入力': 'manual',
         'Hough変換': 'hough',
         '下2桁の"00"を利用': 'zeros',
-        '角度を手動入力': 'manual',
         '補正なし': 'none'
     }
     method_display = st.selectbox(
         "せん断補正（傾き補正）の方法",
         options=list(method_options.keys()),
-        index=1
+        index=0
     )
     shear_method = method_options[method_display]
 
@@ -150,8 +150,15 @@ def render_image_upload_section() -> Dict[str, int]:
                     angle = debug_bundle.get('shear_angles', {}).get('screen', 0)
                     st.markdown(f"##### 2. せん断補正後のスクリーン (補正角度: {angle:.2f}°)")
                     st.image(debug_bundle['shear_corrected_screen'], caption="スクリーン全体にせん断補正を適用", use_container_width=True)
+
+                if 'split_region_images' in debug_bundle and debug_bundle['split_region_images']:
+                    st.markdown("##### 3. プレイヤー領域への分割")
+                    for player, region_image in debug_bundle['split_region_images'].items():
+                        if region_image is not None and region_image.size > 0:
+                            st.image(region_image, caption=f"{player} 領域", use_container_width=True)
+
                 if 'deskewed_digits' in debug_bundle and debug_bundle['deskewed_digits']:
-                    st.markdown("##### 3. 最終的な切り出し数字")
+                    st.markdown("##### 4. 最終的な切り出し数字")
                     for player, digits in debug_bundle['deskewed_digits'].items():
                         st.write(f"**{player}**")
                         if not digits:

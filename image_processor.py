@@ -277,6 +277,7 @@ class ScoreImageProcessor:
 
         region_images = self.split_screen_into_regions(corrected_binary)
         if debug:
+            debug_bundle['split_region_images'] = region_images
             debug_bundle['anchored_score_regions'] = {}
             for player, region_image in region_images.items():
                 if player != '自分' and region_image.size > 0:
