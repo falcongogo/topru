@@ -286,7 +286,7 @@ class ScoreImageProcessor:
                         start_y = h // 3
                         processed_region = processed_region[start_y:, :]
                     elif player == '対面':
-                        start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
+                        start_y = 0
                         processed_region = processed_region[start_y:h, :]
                 processed_regions[player] = processed_region
 
