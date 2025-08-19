@@ -298,6 +298,15 @@ class ScoreImageProcessor:
                 debug_bundle['anchored_score_regions'][player] = [score_image] if score_image is not None else []
 
             debug_bundle['deskewed_digits'] = debug_bundle['anchored_score_regions']
+
+            scores = {}
+            for player, score_images in debug_bundle['anchored_score_regions'].items():
+                if score_images:
+                    score = self._recognize_score_from_image(score_images[0])
+                    if score is not None:
+                        scores[player] = score
+            debug_bundle['scores'] = scores
+
             return debug_bundle
         else:
             scores = {}
