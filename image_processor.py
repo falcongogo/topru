@@ -277,19 +277,26 @@ class ScoreImageProcessor:
 
         region_images = self.split_screen_into_regions(corrected_binary)
         if debug:
-            debug_bundle['split_region_images'] = region_images
-            debug_bundle['anchored_score_regions'] = {}
+            processed_regions = {}
             for player, region_image in region_images.items():
-                if region_image.size > 0:
-                    h, w = region_image.shape
+                processed_region = region_image
+                if processed_region.size > 0:
+                    h, w = processed_region.shape
                     if player in ['上家', '下家']:
                         start_y = h // 3
-                        region_image = region_image[start_y:, :]
+                        processed_region = processed_region[start_y:, :]
                     elif player == '対面':
                         start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
-                        region_image = region_image[start_y:, :]
+                        processed_region = processed_region[start_y:h, :]
+                processed_regions[player] = processed_region
+
+            debug_bundle['split_region_images'] = processed_regions
+
+            debug_bundle['anchored_score_regions'] = {}
+            for player, region_image in processed_regions.items():
                 score_image = self._find_score_by_00_anchor(region_image)
                 debug_bundle['anchored_score_regions'][player] = [score_image] if score_image is not None else []
+
             debug_bundle['deskewed_digits'] = debug_bundle['anchored_score_regions']
             return debug_bundle
         else:
