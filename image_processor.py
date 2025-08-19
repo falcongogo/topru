@@ -280,10 +280,14 @@ class ScoreImageProcessor:
             debug_bundle['split_region_images'] = region_images
             debug_bundle['anchored_score_regions'] = {}
             for player, region_image in region_images.items():
-                if player != '自分' and region_image.size > 0:
+                if region_image.size > 0:
                     h, w = region_image.shape
-                    start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
-                    region_image = region_image[start_y:h, :]
+                    if player in ['上家', '下家']:
+                        start_y = h // 3
+                        region_image = region_image[start_y:, :]
+                    elif player == '対面':
+                        start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
+                        region_image = region_image[start_y:, :]
                 score_image = self._find_score_by_00_anchor(region_image)
                 debug_bundle['anchored_score_regions'][player] = [score_image] if score_image is not None else []
             debug_bundle['deskewed_digits'] = debug_bundle['anchored_score_regions']
@@ -291,10 +295,14 @@ class ScoreImageProcessor:
         else:
             scores = {}
             for player, region_image in region_images.items():
-                if player != '自分' and region_image.size > 0:
+                if region_image.size > 0:
                     h, w = region_image.shape
-                    start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
-                    region_image = region_image[start_y:h, :]
+                    if player in ['上家', '下家']:
+                        start_y = h // 3
+                        region_image = region_image[start_y:, :]
+                    elif player == '対面':
+                        start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
+                        region_image = region_image[start_y:, :]
                 score = self._process_player_score(region_image, player)
                 if score is not None: scores[player] = score
             return scores
