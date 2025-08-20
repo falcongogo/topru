@@ -24,7 +24,7 @@ def main():
             for player, score in scores.items():
                 print(f"  - {player}: {score}")
         else:
-            print("⚠️ 認識失敗: 点数を読み取れませんでした。")
+            print("［警告］ 認識失敗: 点数を読み取れませんでした。")
 
     except Exception as e:
         print(f"❌ エラーが発生しました: {e}")

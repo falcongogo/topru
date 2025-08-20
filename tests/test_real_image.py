@@ -53,7 +53,7 @@ def test_real_image(image_path: str):
                 print(f"  {player}: {score}点")
         else:
             print("\n--- 認識された点数 ---")
-            print("⚠️ 点数を読み取れませんでした。")
+            print("［警告］ 点数を読み取れませんでした。")
 
         # 主要なデバッグ画像を保存
         print("\n--- デバッグ画像の保存 ---")
