@@ -71,6 +71,9 @@ class TestCalculateConditions(unittest.TestCase):
         self.assertLessEqual(direct_ron['need_points'], other_ron['need_points'])
         self.assertTrue(direct_ron['is_direct'])
         self.assertFalse(other_ron['is_direct'])
+
+        # 他家放銃ロンの場合、トップの失点は0のはず
+        self.assertEqual(other_ron['opponent_loss'], 0, "他家放銃ロンの場合、トップの失点は0であるべきです")
     
     def test_edge_cases(self):
         """エッジケースのテスト"""
