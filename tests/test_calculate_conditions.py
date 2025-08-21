@@ -119,5 +119,36 @@ class TestCalculateConditions(unittest.TestCase):
         for condition in result['results']:
             self.assertGreaterEqual(condition['need_points'], 0)
 
+    def test_tsumo_calculation_details(self):
+        """ツモ和了の具体的な計算ロジックを検証するテスト"""
+
+        # ケース1: 自分が親、トップが子
+        # 点差10001点、供託1、積み棒1本
+        # 期待される支払い(1人あたり): (10001 - 1 - 1000 - 4*100) / 4 = 8600 / 4 = 2150点より大きい -> 2151点が必要
+        scores_p = {'自分': 30000, '下家': 40000, '対面': 20000, '上家': 10000}
+        result_p = calculate_conditions(scores_p, oya='自分', tsumibo=1, kyotaku=1)
+        tsumo_p = result_p['results'][2]
+        self.assertEqual(tsumo_p['need_points'], 2151, "親ツモの必要点数計算が不正確です")
+        self.assertEqual(tsumo_p['opponent_loss'], 2600, "親ツモの相手失点計算が不正確です")
+
+        # ケース2: 自分が子、トップが親
+        # 点差20001点、供託1、積み棒1本
+        # 期待される子の支払い: (20001 - 1 - 1000 - 4*100) / 6 = 18600 / 6 = 3100点より大きい -> 3101点が必要
+        scores_c_top_p = {'自分': 20000, '下家': 10000, '対面': 40000, '上家': 30000}
+        result_c_top_p = calculate_conditions(scores_c_top_p, oya='対面', tsumibo=1, kyotaku=1)
+        tsumo_c_top_p = result_c_top_p['results'][2]
+        self.assertEqual(tsumo_c_top_p['need_points'], 3101, "子ツモ（トップが親）の必要点数計算が不正確です")
+        self.assertEqual(tsumo_c_top_p['opponent_loss'], 8000, "子ツモ（トップが親）の相手失点計算が不正確です")
+
+        # ケース3: 自分が子、トップも子
+        # 点差10001点、供託1、積み棒1本
+        # 期待される子の支払い: (10001 - 1 - 1000 - 4*100) / 5 = 8600 / 5 = 1720点より大きい -> 1721点が必要
+        scores_c_top_c = {'自分': 20000, '下家': 30000, '対面': 25000, '上家': 25000}
+        result_c_top_c = calculate_conditions(scores_c_top_c, oya='対面', tsumibo=1, kyotaku=1)
+        tsumo_c_top_c = result_c_top_c['results'][2]
+        self.assertEqual(tsumo_c_top_c['need_points'], 1721, "子ツモ（トップが子）の必要点数計算が不正確です")
+        self.assertEqual(tsumo_c_top_c['opponent_loss'], 2000, "子ツモ（トップが子）の相手失点計算が不正確です")
+
+
 if __name__ == '__main__':
     unittest.main()
