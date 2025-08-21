@@ -44,7 +44,12 @@ def _calculate_other_ron(top_diff, is_parent, tsumibo, kyotaku, role_str):
     lookup_result = reverse_lookup(needed_score, 'ron', is_parent)
 
     title = f'他家放銃ロン（{role_str}）'
-    return _create_result_dict(title, needed_score, lookup_result, is_direct=False)
+    result = _create_result_dict(title, needed_score, lookup_result, is_direct=False)
+
+    # 他家ロンの場合、トップの失点は0
+    result['opponent_loss'] = 0
+
+    return result
 
 def _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str, top_is_parent):
     """ツモ和了の条件を計算"""
