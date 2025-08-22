@@ -10,67 +10,38 @@ def _lookup_high_tier_hand(points, method, is_parent):
     role = 'parent' if is_parent else 'child'
     thresholds = config.HIGH_TIER_HANDS_THRESHOLDS[method][role]
 
-    candidates = []
     for threshold, rank in thresholds:
-        if threshold >= points:
-            candidates.append((threshold, rank))
-
-    if not candidates:
-        return None
-
-    # 最も安い(点数が低い)候補を選択
-    cheapest_threshold, cheapest_rank = min(candidates, key=lambda x: x[0])
-
-    if method == 'tsumo':
-        if is_parent:
-            display_val = f"{cheapest_threshold}オール"
-            return {'rank': cheapest_rank, 'points': display_val, 'display': display_val, 'raw_points': cheapest_threshold}
-        else: # child tsumo
-            parent_pay = cheapest_threshold * 2
-            display_val = f"{cheapest_threshold}-{parent_pay}"
-            raw_points = (cheapest_threshold, parent_pay)
-            return {'rank': cheapest_rank, 'points': display_val, 'display': display_val, 'raw_points': raw_points}
-    else: # ron
-        return {'rank': cheapest_rank, 'points': cheapest_threshold}
+        if points >= threshold:
+            if method == 'tsumo':
+                if is_parent:
+                    display_val = f"{points}オール"
+                    return {'rank': rank, 'points': display_val, 'display': display_val, 'raw_points': points}
+                else: # child tsumo
+                    parent_pay = points * 2
+                    display_val = f"{points}-{parent_pay}"
+                    raw_points = (points, parent_pay)
+                    return {'rank': rank, 'points': display_val, 'display': display_val, 'raw_points': raw_points}
+            else: # ron
+                return {'rank': rank, 'points': points}
+    return None
 
 def reverse_lookup(points, method, is_parent):
     if points <= 0:
         return {'rank': '不要', 'points': 0, 'display': 0}
 
+    # 満貫以上をチェック
     high_tier_result = _lookup_high_tier_hand(points, method, is_parent)
-
-    role = 'parent' if is_parent else 'child'
-    low_tier_result = _lookup_low_tier_hand(points, method, role)
-
-    def get_value(result):
-        if not result:
-            return float('inf')
-        raw = result.get('raw_points', result.get('points', float('inf')))
-        if isinstance(raw, tuple): # child tsumo
-            return raw[0]
-        return raw
-
-    high_tier_value = get_value(high_tier_result)
-    low_tier_value = get_value(low_tier_result)
-
-    # どっちの候補も見つからなかった場合
-    if not high_tier_result and not low_tier_result:
-        # 役満の可能性をチェック
-        yakuman_threshold = config.HIGH_TIER_HANDS_THRESHOLDS[method][role][0][0]
-        if points >= yakuman_threshold:
-             # tsumoの場合、raw_pointsも設定する必要があるかもしれないが、
-             # 現在のテストではロンしかないので、pointsだけで十分
-            return {'rank': '役満', 'points': points, 'raw_points': points}
-        return {'rank': '不可能', 'points': points, 'display': points}
-
-    # 同点の場合はハイティアを優先
-    if high_tier_result and high_tier_value <= low_tier_value:
+    if high_tier_result:
         return high_tier_result
 
+    role = 'parent' if is_parent else 'child'
+
+    # 満貫未満を探索
+    low_tier_result = _lookup_low_tier_hand(points, method, role)
     if low_tier_result:
         return low_tier_result
 
-    return high_tier_result
+    return {'rank': '不可能', 'points': points, 'display': points}
 
 def _format_low_tier_result(han, fu, val, method, role):
     """満貫未満の結果辞書をフォーマットする"""
