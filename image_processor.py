@@ -303,17 +303,33 @@ class ScoreImageProcessor:
         anchored_regions_for_debug = {}
 
         for player, region_image in region_images.items():
-            cropped_region = self._find_and_crop_content(region_image)
+            # Step 1: Static crop (the restored logic)
+            statically_cropped_region = region_image
+            if region_image.size > 0:
+                h, w = region_image.shape
+                if player in ['上家', '下家']:
+                    start_y = h // 3
+                    end_y = h - (h // 3)
+                    statically_cropped_region = region_image[start_y:end_y, :]
+                elif player == '対面':
+                    start_y = h // 20
+                    end_y = h - (h * 4 // 9)
+                    start_x = w // 3
+                    end_x = w - (w * 1 // 10)
+                    statically_cropped_region = region_image[start_y:end_y, start_x:end_x]
+
+            # Step 2: Dynamic crop on the result of step 1
+            dynamically_cropped_region = self._find_and_crop_content(statically_cropped_region)
 
             if debug:
-                processed_regions_for_debug[player] = cropped_region
+                processed_regions_for_debug[player] = dynamically_cropped_region
 
-            score = self._process_player_score(cropped_region, player)
+            score = self._process_player_score(dynamically_cropped_region, player)
             if score is not None:
                 scores[player] = score
 
             if debug:
-                score_image_for_debug = self._find_score_by_00_anchor(cropped_region)
+                score_image_for_debug = self._find_score_by_00_anchor(dynamically_cropped_region)
                 anchored_regions_for_debug[player] = [score_image_for_debug] if score_image_for_debug is not None else []
 
         if debug:
