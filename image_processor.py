@@ -263,6 +263,48 @@ class ScoreImageProcessor:
 
         return image[y:y+h, x:x+w]
 
+    def _split_image_by_black_columns(self, image: np.ndarray) -> List[np.ndarray]:
+        """
+        Splits an image by vertical columns of all-black pixels.
+        This is used for debug view to show how digits are separated.
+
+        Args:
+            image: The input binary image (white foreground, black background).
+
+        Returns:
+            A list of images, where each image is a single character block.
+        """
+        if image is None or image.size == 0:
+            return []
+
+        w = image.shape[1]
+
+        in_content = False
+        start_col = 0
+        content_images = []
+
+        for col in range(w):
+            # A column is considered black if all its pixels are black (value 0).
+            is_column_black = np.sum(image[:, col]) == 0
+
+            if not in_content and not is_column_black:
+                # Transition from black to content -> Start of a content block
+                in_content = True
+                start_col = col
+            elif in_content and is_column_black:
+                # Transition from content to black -> End of a content block
+                in_content = False
+                # Use configured min_width to avoid capturing noise as a character
+                if col - start_col >= config.DIGIT_MIN_WIDTH:
+                    content_images.append(image[:, start_col:col])
+
+        # If the image ends with a content block, capture it.
+        if in_content:
+            if w - start_col >= config.DIGIT_MIN_WIDTH:
+                content_images.append(image[:, start_col:w])
+
+        return content_images
+
     def _image_processing_pipeline(self, image: np.ndarray, debug=False, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
         debug_bundle = {}
 
@@ -301,6 +343,8 @@ class ScoreImageProcessor:
         scores = {}
         processed_regions_for_debug = {}
         anchored_regions_for_debug = {}
+        split_digits_by_player = {}
+
 
         for player, region_image in region_images.items():
             # Step 1: Static crop (the restored logic)
@@ -321,22 +365,23 @@ class ScoreImageProcessor:
             # Step 2: Dynamic crop on the result of step 1
             dynamically_cropped_region = self._find_and_crop_content(statically_cropped_region)
 
-            if debug:
-                processed_regions_for_debug[player] = dynamically_cropped_region
-
             score = self._process_player_score(dynamically_cropped_region, player)
             if score is not None:
                 scores[player] = score
 
             if debug:
+                processed_regions_for_debug[player] = dynamically_cropped_region
                 score_image_for_debug = self._find_score_by_00_anchor(dynamically_cropped_region)
                 anchored_regions_for_debug[player] = [score_image_for_debug] if score_image_for_debug is not None else []
+                split_digits_by_player[player] = self._split_image_by_black_columns(dynamically_cropped_region)
+
 
         if debug:
             debug_bundle['split_region_images'] = processed_regions_for_debug
             debug_bundle['anchored_score_regions'] = anchored_regions_for_debug
             debug_bundle['deskewed_digits'] = anchored_regions_for_debug
             debug_bundle['scores'] = scores
+            debug_bundle['split_digits_by_player'] = split_digits_by_player
 
         result = {'scores': scores}
         if debug:
