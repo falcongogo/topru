@@ -284,10 +284,14 @@ class ScoreImageProcessor:
                     h, w = processed_region.shape
                     if player in ['上家', '下家']:
                         start_y = h // 3
-                        processed_region = processed_region[start_y:, :]
+                        end_y = h - (h // 3)
+                        processed_region = processed_region[start_y:end_y, :]
                     elif player == '対面':
-                        start_y = 0
-                        processed_region = processed_region[start_y:h, :]
+                        start_y = h // 20
+                        end_y = h - (h * 4 // 9)
+                        start_x = w // 3
+                        end_x = w - (w * 1 // 10)
+                        processed_region = processed_region[start_y:end_y,start_x:end_x]
                 processed_regions[player] = processed_region
 
             debug_bundle['split_region_images'] = processed_regions
@@ -315,10 +319,14 @@ class ScoreImageProcessor:
                     h, w = region_image.shape
                     if player in ['上家', '下家']:
                         start_y = h // 3
-                        region_image = region_image[start_y:, :]
+                        end_y = h - (h // 3)
+                        region_image = region_image[start_y:end_y, :]
                     elif player == '対面':
-                        start_y = int(h * (1.0 - config.PLAYER_REGION_CROP_RATIO))
-                        region_image = region_image[start_y:, :]
+                        start_y = h // 20
+                        end_y = h - (h * 4 // 9)
+                        start_x = w // 3
+                        end_x = w - (w * 1 // 10)
+                        region_image = region_image[start_y:end_y, start_x:end_x]
                 score = self._process_player_score(region_image, player)
                 if score is not None: scores[player] = score
             return scores
