@@ -12,32 +12,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 def run_all_tests():
     """全てのテストを実行"""
-    # テストファイルのリスト
-    test_files = [
-        'test_points_lookup.py',
-        'test_calculate_conditions.py',
-        'test_app.py',
-        'test_points_table.py',
-        'test_image_processor.py'
-    ]
-    
-    # テストスイートを作成
+    # 'tests' ディレクトリからテストを自動検出
     loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    
-    # 各テストファイルをスイートに追加
-    for test_file in test_files:
-        if os.path.exists(test_file):
-            try:
-                # テストファイルをインポートしてスイートに追加
-                module_name = test_file.replace('.py', '')
-                module = __import__(module_name)
-                suite.addTests(loader.loadTestsFromModule(module))
-                print(f"✓ {test_file} を読み込みました")
-            except ImportError as e:
-                print(f"✗ {test_file} の読み込みに失敗: {e}")
-        else:
-            print(f"✗ {test_file} が見つかりません")
+    # プロジェクトルートからの相対パスとして 'tests' を指定
+    test_dir = os.path.join(os.path.dirname(__file__))
+    suite = loader.discover(test_dir)
     
     # テストを実行
     runner = unittest.TextTestRunner(verbosity=2)

@@ -248,16 +248,37 @@ class ScoreImageProcessor:
             print(f"OCR読み取りエラー({player}): {e}")
             return None
 
+    def _find_and_crop_content(self, image: np.ndarray) -> np.ndarray:
+        """Finds the contours of content and returns a tightly cropped image."""
+        if image is None or image.size == 0:
+            return image
+
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not contours:
+            return image
+
+        all_points = np.vstack([cnt for cnt in contours])
+        x, y, w, h = cv2.boundingRect(all_points)
+
+        return image[y:y+h, x:x+w]
+
     def _image_processing_pipeline(self, image: np.ndarray, debug=False, shear_correction_method: str = 'hough', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
         debug_bundle = {}
+
         warped_screen = self.detect_and_warp_screen(image)
         if warped_screen is None:
             if debug:
                 debug_bundle['warped_screen'] = np.zeros((100, 300, 3), dtype=np.uint8)
                 cv2.putText(debug_bundle['warped_screen'], "Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                return debug_bundle
-            return {}
-        if debug: debug_bundle['warped_screen'] = warped_screen
+            result = {'scores': {}}
+            if debug:
+                result['debug_bundle'] = debug_bundle
+            return result
+
+        if debug:
+            debug_bundle['warped_screen'] = warped_screen.copy()
+
         gray = cv2.cvtColor(warped_screen, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, config.GAUSSIAN_BLUR_KERNEL_SIZE, 0)
         _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -272,67 +293,54 @@ class ScoreImageProcessor:
             corrected_binary, angle = binary, 0.0
 
         if debug:
-            debug_bundle['shear_corrected_screen'] = corrected_binary
+            debug_bundle['shear_corrected_screen'] = corrected_binary.copy()
             debug_bundle['shear_angles'] = {'screen': angle}
 
         region_images = self.split_screen_into_regions(corrected_binary)
+
+        scores = {}
+        processed_regions_for_debug = {}
+        anchored_regions_for_debug = {}
+
+        for player, region_image in region_images.items():
+            cropped_region = self._find_and_crop_content(region_image)
+
+            if debug:
+                processed_regions_for_debug[player] = cropped_region
+
+            score = self._process_player_score(cropped_region, player)
+            if score is not None:
+                scores[player] = score
+
+            if debug:
+                score_image_for_debug = self._find_score_by_00_anchor(cropped_region)
+                anchored_regions_for_debug[player] = [score_image_for_debug] if score_image_for_debug is not None else []
+
         if debug:
-            processed_regions = {}
-            for player, region_image in region_images.items():
-                processed_region = region_image
-                if processed_region.size > 0:
-                    h, w = processed_region.shape
-                    if player in ['上家', '下家']:
-                        start_y = h // 3
-                        end_y = h - (h // 3)
-                        processed_region = processed_region[start_y:end_y, :]
-                    elif player == '対面':
-                        start_y = h // 20
-                        end_y = h - (h * 4 // 9)
-                        start_x = w // 3
-                        end_x = w - (w * 1 // 10)
-                        processed_region = processed_region[start_y:end_y,start_x:end_x]
-                processed_regions[player] = processed_region
-
-            debug_bundle['split_region_images'] = processed_regions
-
-            debug_bundle['anchored_score_regions'] = {}
-            for player, region_image in processed_regions.items():
-                score_image = self._find_score_by_00_anchor(region_image)
-                debug_bundle['anchored_score_regions'][player] = [score_image] if score_image is not None else []
-
-            debug_bundle['deskewed_digits'] = debug_bundle['anchored_score_regions']
-
-            scores = {}
-            for player, score_images in debug_bundle['anchored_score_regions'].items():
-                if score_images:
-                    score = self._recognize_score_from_image(score_images[0])
-                    if score is not None:
-                        scores[player] = score
+            debug_bundle['split_region_images'] = processed_regions_for_debug
+            debug_bundle['anchored_score_regions'] = anchored_regions_for_debug
+            debug_bundle['deskewed_digits'] = anchored_regions_for_debug
             debug_bundle['scores'] = scores
 
-            return debug_bundle
-        else:
-            scores = {}
-            for player, region_image in region_images.items():
-                if region_image.size > 0:
-                    h, w = region_image.shape
-                    if player in ['上家', '下家']:
-                        start_y = h // 3
-                        end_y = h - (h // 3)
-                        region_image = region_image[start_y:end_y, :]
-                    elif player == '対面':
-                        start_y = h // 20
-                        end_y = h - (h * 4 // 9)
-                        start_x = w // 3
-                        end_x = w - (w * 1 // 10)
-                        region_image = region_image[start_y:end_y, start_x:end_x]
-                score = self._process_player_score(region_image, player)
-                if score is not None: scores[player] = score
-            return scores
+        result = {'scores': scores}
+        if debug:
+            result['debug_bundle'] = debug_bundle
 
-    def process_score_image(self, image: np.ndarray, shear_correction_method: str = 'zeros', manual_shear_angle: float = 0.0) -> Dict[str, int]:
-        return self._image_processing_pipeline(image, debug=False, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
+        return result
 
-    def get_full_debug_bundle(self, image: np.ndarray, shear_correction_method: str = 'zeros', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
-        return self._image_processing_pipeline(image, debug=True, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)
+    def process_image(self, image: np.ndarray, debug: bool = False, shear_correction_method: str = 'zeros', manual_shear_angle: float = 0.0) -> Dict[str, Any]:
+        """
+        Processes the score image, returning scores and optional debug information.
+
+        Args:
+            image: The input image.
+            debug: If True, returns a bundle of intermediate images and data.
+            shear_correction_method: The method for shear correction.
+            manual_shear_angle: The angle for manual shear correction.
+
+        Returns:
+            A dictionary containing:
+            - 'scores': A dictionary of player scores.
+            - 'debug_bundle': (Only if debug=True) A dictionary of debug information.
+        """
+        return self._image_processing_pipeline(image, debug=debug, shear_correction_method=shear_correction_method, manual_shear_angle=manual_shear_angle)

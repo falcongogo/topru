@@ -8,13 +8,16 @@ from PIL import Image
 import config
 from image_processor import ScoreImageProcessor
 
-def process_uploaded_image(uploaded_file, shear_method: str, manual_angle: float) -> Dict[str, Any]:
-    """アップロードされた画像を処理して点数とステータスを返す"""
+def _process_image_and_update_state(uploaded_file, shear_method: str, manual_angle: float, debug: bool):
+    """
+    Processes the uploaded image once and updates session state with scores and debug info.
+    """
     if 'image_processor' not in st.session_state or st.session_state.image_processor is None:
         try:
             st.session_state.image_processor = ScoreImageProcessor()
         except Exception as e:
-            return {'status': 'error', 'message': f"画像処理モジュールの初期化に失敗しました: {str(e)}"}
+            st.session_state.ocr_status = {'status': 'error', 'message': f"画像処理モジュールの初期化に失敗しました: {str(e)}"}
+            return
 
     try:
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
@@ -22,53 +25,42 @@ def process_uploaded_image(uploaded_file, shear_method: str, manual_angle: float
         if image is None:
             raise ValueError("アップロードされた画像を読み込めませんでした")
 
-        scores = st.session_state.image_processor.process_score_image(
-            image, shear_correction_method=shear_method, manual_shear_angle=manual_angle
-        )
+        with st.spinner('画像を処理中...'):
+            result = st.session_state.image_processor.process_image(
+                image,
+                debug=debug,
+                shear_correction_method=shear_method,
+                manual_shear_angle=manual_angle
+            )
 
-        if not scores:
-            return {'status': 'warning', 'message': "点数を読み取れませんでした。画像の角度や明るさを確認してください。"}
+        scores = result.get('scores', {})
 
-        return {'status': 'success', 'scores': scores, 'message': f"点数を読み取りました: {scores}"}
+        if scores:
+            st.session_state.scores = scores
+            st.session_state.ocr_status = {'status': 'success', 'message': f"点数を読み取りました: {scores}"}
+        else:
+            st.session_state.ocr_status = {'status': 'warning', 'message': "点数を読み取れませんでした。画像の角度や明るさを確認してください。"}
 
-    except Exception as e:
-        return {'status': 'error', 'message': f"画像処理中にエラーが発生しました: {str(e)}"}
-
-def process_uploaded_image_full_debug(uploaded_file, shear_method: str, manual_angle: float):
-    """アップロードされた画像を処理して詳細なデバッグ情報を取得"""
-    if 'image_processor' not in st.session_state or st.session_state.image_processor is None:
-        try:
-            st.session_state.image_processor = ScoreImageProcessor()
-        except Exception as e:
-            st.error(f"画像処理モジュールの初期化に失敗しました: {str(e)}")
-            return None
-
-    try:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-
-        if image is None:
-            raise ValueError("アップロードされた画像を読み込めませんでした")
-
-        return st.session_state.image_processor.get_full_debug_bundle(
-            image, shear_correction_method=shear_method, manual_shear_angle=manual_angle
-        )
+        if debug:
+            st.session_state.debug_bundle = result.get('debug_bundle', {})
+        elif 'debug_bundle' in st.session_state:
+            del st.session_state['debug_bundle']
 
     except Exception as e:
-        st.error(f"デバッグ処理中にエラーが発生しました: {str(e)}")
-        return None
+        st.session_state.ocr_status = {'status': 'error', 'message': f"画像処理中にエラーが発生しました: {str(e)}"}
+        if 'debug_bundle' in st.session_state:
+            del st.session_state['debug_bundle']
+
 
 def render_image_upload_section() -> Dict[str, int]:
     """画像アップロードセクションの描画"""
     st.subheader('📷 スリムスコア28S画像から自動入力')
 
-    # Initialize session state keys
     if 'last_uploaded_file_id' not in st.session_state:
         st.session_state.last_uploaded_file_id = None
     if 'ocr_status' not in st.session_state:
         st.session_state.ocr_status = None
 
-    # Display OCR status from previous run
     if st.session_state.ocr_status:
         status = st.session_state.ocr_status
         if status['status'] == 'success':
@@ -110,37 +102,22 @@ def render_image_upload_section() -> Dict[str, int]:
         )
 
     if uploaded_file is not None:
-        current_config_id = f"{uploaded_file.file_id}-{shear_method}-{manual_angle}"
+        debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=True)
+
+        current_config_id = f"{uploaded_file.file_id}-{shear_method}-{manual_angle}-{debug_mode}"
         last_config_id = st.session_state.get('last_uploaded_file_id')
 
-        # Reprocess if the file or any setting has changed
         if current_config_id != last_config_id:
             uploaded_file.seek(0)
-            with st.spinner('画像を処理中...'):
-                result = process_uploaded_image(uploaded_file, shear_method, manual_angle)
-            st.session_state.ocr_status = result
-            if result['status'] == 'success':
-                st.session_state.scores = result['scores']
-
-            # Invalidate the old debug bundle as config has changed
-            if 'debug_bundle' in st.session_state:
-                del st.session_state['debug_bundle']
-
+            _process_image_and_update_state(uploaded_file, shear_method, manual_angle, debug_mode)
             st.session_state.last_uploaded_file_id = current_config_id
+            st.rerun()
 
         st.image(uploaded_file, caption="アップロードされた画像", width=300)
-
-        debug_mode = st.checkbox('🔧 デバッグモード（検出領域を表示）', value=True)
 
         if debug_mode:
             st.markdown("---")
             st.subheader("🛠️ デバッグ情報")
-
-            # Regenerate debug bundle if it doesn't exist (it was deleted on config change)
-            if 'debug_bundle' not in st.session_state:
-                uploaded_file.seek(0)
-                with st.spinner('詳細デバッグ情報を生成中...'):
-                    st.session_state.debug_bundle = process_uploaded_image_full_debug(uploaded_file, shear_method, manual_angle)
 
             debug_bundle = st.session_state.get('debug_bundle')
             if debug_bundle:
