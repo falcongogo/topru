@@ -153,3 +153,4 @@ Thumbs.db
 *.tmp
 *.temp
 debug_binary.png
+/debug/
