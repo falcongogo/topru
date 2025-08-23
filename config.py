@@ -65,7 +65,7 @@ SEVEN_SEGMENT_ROIS = {
     'd': (0.2, 0.8, 0.8, 1.0), 'e': (0.0, 0.55, 0.3, 0.9), 'f': (0.0, 0.1, 0.3, 0.45),
     'g': (0.2, 0.4, 0.8, 0.6)
 }
-SEGMENT_ACTIVATION_THRESHOLD = 0.5
+SEGMENT_ACTIVATION_THRESHOLD = 0.7
 
 # Screen splitting
 SCREEN_TOTAL_PARTS = 7
