@@ -15,18 +15,18 @@ class TestAppFunctions(unittest.TestCase):
 
     def test_validate_inputs_valid(self):
         """有効な入力値の検証テスト"""
-        scores = {'自分': 25000, '下家': 25000, '対面': 25000, '上家': 25000}
+        scores = {'自家': 25000, '下家': 25000, '対面': 25000, '上家': 25000}
         self.assertTrue(validate_inputs(scores, 1, 0))
 
     def test_validate_inputs_invalid_scores(self):
         """無効な点数の検証テスト"""
-        scores = {'自分': -100, '下家': 25000, '対面': 25000, '上家': 25000}
+        scores = {'自家': -100, '下家': 25000, '対面': 25000, '上家': 25000}
         self.assertFalse(validate_inputs(scores, 1, 0))
         sys.modules['streamlit'].error.assert_called_with("点数は0以上で入力してください")
 
     def test_validate_inputs_invalid_tsumibo_kyotaku(self):
         """無効な積み棒・供託棒の検証テスト"""
-        scores = {'自分': 25000, '下家': 25000, '対面': 25000, '上家': 25000}
+        scores = {'自家': 25000, '下家': 25000, '対面': 25000, '上家': 25000}
         self.assertFalse(validate_inputs(scores, -1, 0))
         sys.modules['streamlit'].error.assert_called_with("積み棒・供託棒は0以上で入力してください")
         self.assertFalse(validate_inputs(scores, 0, -1))

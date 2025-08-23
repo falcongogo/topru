@@ -86,7 +86,7 @@ def test_real_image(image_path: str):
         player_name_map = {
             '上家': 'kamicha',
             '対面': 'toimen',
-            '自分': 'jibun',
+            '自家': 'jicha',
             '下家': 'shimocha'
         }
 

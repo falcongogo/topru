@@ -61,7 +61,7 @@ def _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str, top_is_par
     numerator = top_diff - 1 - kyotaku_points - tsumibo_swing
 
     if is_parent:
-        # 親ツモ：トップは必ず子。点差は4P(自分の収入3P + トップの失点1P)で縮まる
+        # 親ツモ：トップは必ず子。点差は4P(自家の収入3P + トップの失点1P)で縮まる
         divisor = 4
         needed_score = math.floor(numerator / divisor) + 1
         needed_score = max(0, needed_score)
@@ -69,10 +69,10 @@ def _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str, top_is_par
     else:
         # 子ツモ
         if top_is_parent:
-            # トップが親。点差は6P(自分の収入4P + トップの失点2P)で縮まる
+            # トップが親。点差は6P(自家の収入4P + トップの失点2P)で縮まる
             divisor = 6
         else:
-            # トップも子。点差は5P(自分の収入4P + トップの失点1P)で縮まる
+            # トップも子。点差は5P(自家の収入4P + トップの失点1P)で縮まる
             divisor = 5
 
         needed_score = math.floor(numerator / divisor) + 1
@@ -107,9 +107,9 @@ def _calculate_tsumo(top_diff, is_parent, tsumibo, kyotaku, role_str, top_is_par
     return result
 
 def calculate_conditions(scores, oya, tsumibo, kyotaku):
-    me = '自分'
+    me = '自家'
     if me not in scores:
-        raise ValueError('scores must include "自分"')
+        raise ValueError('scores must include "自家"')
 
     leader = max(scores, key=lambda k: (scores[k], k))
     my_score = scores[me]
