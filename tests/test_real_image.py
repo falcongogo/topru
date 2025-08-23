@@ -40,7 +40,7 @@ def test_real_image(image_path: str):
     
     try:
         print("\n--- 画像処理実行中 (デバッグモード) ---")
-        result = processor.process_image(image, debug=True, shear_correction_method='hough')
+        result = processor.process_image(image, debug=True, shear_correction_method='zeros')
         if not result:
             print("❌ 画像処理に失敗しました。")
             return False
