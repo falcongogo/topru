@@ -39,25 +39,35 @@ def test_real_image(image_path: str):
         return False
     
     try:
-        print("\n--- デバッグバンドル生成中 ---")
-        debug_bundle = processor.get_full_debug_bundle(image, shear_correction_method='zeros')
-        if not debug_bundle:
-            print("❌ デバッグバンドルの生成に失敗しました。")
+        print("\n--- 画像処理実行中 (デバッグモード) ---")
+        result = processor.process_image(image, debug=True, shear_correction_method='hough')
+        if not result:
+            print("❌ 画像処理に失敗しました。")
             return False
-        print("✅ デバッグバンドルを生成しました。")
+
+        scores = result.get('scores', {})
+        debug_bundle = result.get('debug_bundle', {})
+
+        print("✅ 画像処理が完了しました。")
         
         # 認識された点数を表示
-        if 'scores' in debug_bundle and debug_bundle['scores']:
+        if scores:
             print("\n--- 認識された点数 ---")
-            for player, score in debug_bundle['scores'].items():
+            for player, score in scores.items():
                 print(f"  {player}: {score}点")
         else:
             print("\n--- 認識された点数 ---")
             print("［警告］ 点数を読み取れませんでした。")
 
         # 主要なデバッグ画像を保存
+        if not debug_bundle:
+            print("\n--- デバッグ情報 ---")
+            print("［警告］ デバッグバンドルが生成されませんでした。")
+            return True
+
         print("\n--- デバッグ画像の保存 ---")
         base_name, ext = os.path.splitext(image_path)
+        os.makedirs("debug", exist_ok=True) # Ensure debug directory exists
 
         images_to_save = {
             'warped_screen': '1_warped_screen',
@@ -66,20 +76,40 @@ def test_real_image(image_path: str):
 
         for key, name_suffix in images_to_save.items():
             if key in debug_bundle and debug_bundle[key] is not None and debug_bundle[key].size > 0:
-                debug_path = f"{base_name}_{name_suffix}{ext}"
+                debug_path = os.path.join("debug", f"{os.path.basename(base_name)}_{name_suffix}{ext}")
                 cv2.imwrite(debug_path, debug_bundle[key])
                 print(f"✅ 「{key}」を保存しました: {debug_path}")
             else:
                 print(f"ℹ️ 「{key}」は利用できませんでした。")
+
+        # Player name mapping for ASCII-safe filenames
+        player_name_map = {
+            '上家': 'kamicha',
+            '対面': 'toimen',
+            '自分': 'jibun',
+            '下家': 'shimocha'
+        }
 
         # 4分割された領域を保存
         if 'split_region_images' in debug_bundle and debug_bundle['split_region_images']:
             print("\n--- 4分割領域の保存 ---")
             for player, region_image in debug_bundle['split_region_images'].items():
                  if region_image is not None and region_image.size > 0:
-                    debug_path = f"{base_name}_3_split_{player}{ext}"
+                    player_en = player_name_map.get(player, 'unknown')
+                    debug_path = os.path.join("debug", f"{os.path.basename(base_name)}_3_split_{player_en}{ext}")
                     cv2.imwrite(debug_path, region_image)
                     print(f"✅ 「{player}」領域を保存しました: {debug_path}")
+
+        # 認識された数字画像を保存
+        if 'split_digits_by_player' in debug_bundle and debug_bundle['split_digits_by_player']:
+            print("\n--- 認識された数字の保存 ---")
+            for player, digits in debug_bundle['split_digits_by_player'].items():
+                if digits:
+                    player_en = player_name_map.get(player, 'unknown')
+                    player_digits_img = np.hstack(digits)
+                    debug_path = os.path.join("debug", f"{os.path.basename(base_name)}_4_digits_{player_en}{ext}")
+                    cv2.imwrite(debug_path, player_digits_img)
+                    print(f"✅ 「{player}」の数字を保存しました: {debug_path}")
 
     except Exception as e:
         print(f"❌ デバッグ処理中にエラーが発生しました: {e}")

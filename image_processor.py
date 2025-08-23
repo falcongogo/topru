@@ -1,7 +1,5 @@
 import cv2
 import numpy as np
-import pytesseract
-from PIL import Image
 from typing import Dict, Optional, Tuple, List, Any
 import config
 
@@ -24,16 +22,29 @@ class ScoreImageProcessor:
         if region_image.size == 0 or self.template_00 is None or self.template_00.shape[0] < 2:
             return None
 
-        template = self.template_00
+        original_template = self.template_00
         h, w = region_image.shape
+        th_orig, tw_orig = original_template.shape
+
+        # Dynamically resize template to match the height of the region
+        # Target height for the template will be 80% of the region's height
+        new_th = int(h * 0.8)
+        if new_th <= 0: return None
+
+        aspect_ratio = tw_orig / th_orig
+        new_tw = int(new_th * aspect_ratio)
+        if new_tw <= 0: return None
+
+        template = cv2.resize(original_template, (new_tw, new_th), interpolation=cv2.INTER_AREA)
         th, tw = template.shape
 
-        if h < th or w < tw: return None
+        if h < th or w < tw:
+            return None
 
         res = cv2.matchTemplate(region_image, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
-        threshold = 0.6
+        threshold = 0.3 # Lowered from 0.6 to handle variations
         if max_val < threshold:
             return None
 
@@ -50,21 +61,6 @@ class ScoreImageProcessor:
         crop_y_end = min(h, tl[1] + th + y_padding)
 
         return region_image[crop_y_start:crop_y_end, crop_x_start:crop_x_end]
-
-    def _recognize_score_from_image(self, score_image: np.ndarray) -> Optional[int]:
-        if score_image is None or score_image.size == 0: return None
-        try:
-            padded_image = cv2.copyMakeBorder(score_image, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=0)
-            custom_config = r'--psm 7 -c tessedit_char_whitelist=0123456789'
-            text = pytesseract.image_to_string(padded_image, config=custom_config)
-            cleaned_text = "".join(filter(str.isdigit, text))
-            if not cleaned_text: return None
-            score = int(cleaned_text)
-            if not str(score).endswith("00"): return None
-            if self._is_valid_score(score): return score
-            return None
-        except (pytesseract.TesseractNotFoundError, ValueError, TypeError):
-            return None
 
     def _find_main_score_frame(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -215,6 +211,44 @@ class ScoreImageProcessor:
             return self.seven_segment_patterns.get(pattern)
         except (IndexError, ValueError): return None
 
+    def recognize_score_from_7_segment(self, score_image: np.ndarray) -> Optional[int]:
+        """
+        Recognizes a multi-digit score from an image using 7-segment display logic.
+
+        Args:
+            score_image: A binary image containing a multi-digit score.
+
+        Returns:
+            The recognized score as an integer, or None if recognition fails.
+        """
+        if score_image is None or score_image.size == 0:
+            return None
+
+        # Split the score image into individual digit images
+        digit_images = self._split_digits(score_image, tight_crop=True)
+
+        if not digit_images or len(digit_images) != self.expected_digits:
+            return None
+
+        recognized_string = ""
+        for digit_img in digit_images:
+            digit = self._recognize_7_segment_digit(digit_img)
+            if digit is not None:
+                recognized_string += str(digit)
+            else:
+                return None # If any digit fails, fail the whole score
+
+        if not recognized_string:
+            return None
+
+        try:
+            score = int(recognized_string)
+            if self._is_valid_score(score):
+                return score
+            return None
+        except (ValueError, TypeError):
+            return None
+
     def detect_and_warp_screen(self, image: np.ndarray) -> Optional[np.ndarray]:
         outer_frame_coords = self._find_main_score_frame(image)
         search_image, offset = (image[outer_frame_coords[1]:outer_frame_coords[1]+outer_frame_coords[3], outer_frame_coords[0]:outer_frame_coords[0]+outer_frame_coords[2]], (outer_frame_coords[0], outer_frame_coords[1])) if outer_frame_coords else (image, (0, 0))
@@ -242,10 +276,13 @@ class ScoreImageProcessor:
     def _process_player_score(self, region_image: np.ndarray, player: str) -> Optional[int]:
         try:
             score_image = self._find_score_by_00_anchor(region_image)
-            if score_image is None: return None
-            return self._recognize_score_from_image(score_image)
+            if score_image is None:
+                # Fallback or alternative method can be placed here if needed
+                return None
+            # Use the new 7-segment recognition method
+            return self.recognize_score_from_7_segment(score_image)
         except Exception as e:
-            print(f"OCR読み取りエラー({player}): {e}")
+            print(f"7セグメント認識エラー({player}): {e}")
             return None
 
     def _find_and_crop_content(self, image: np.ndarray) -> np.ndarray:
@@ -266,39 +303,41 @@ class ScoreImageProcessor:
     def _split_image_by_black_columns(self, image: np.ndarray) -> List[np.ndarray]:
         """
         Splits an image by vertical columns of all-black pixels.
-        This is used for debug view to show how digits are separated.
-
-        Args:
-            image: The input binary image (white foreground, black background).
-
-        Returns:
-            A list of images, where each image is a single character block.
+        This version requires a minimum gap width to prevent splitting on internal holes.
         """
         if image is None or image.size == 0:
             return []
 
         w = image.shape[1]
+        content_images = []
 
         in_content = False
         start_col = 0
-        content_images = []
+        black_run_start = 0
 
         for col in range(w):
-            # A column is considered black if all its pixels are black (value 0).
-            is_column_black = np.sum(image[:, col]) == 0
+            is_column_black = np.sum(image[:, col]) < 255
 
-            if not in_content and not is_column_black:
-                # Transition from black to content -> Start of a content block
-                in_content = True
-                start_col = col
-            elif in_content and is_column_black:
-                # Transition from content to black -> End of a content block
-                in_content = False
-                # Use configured min_width to avoid capturing noise as a character
-                if col - start_col >= config.DIGIT_MIN_WIDTH:
-                    content_images.append(image[:, start_col:col])
+            if in_content:
+                if is_column_black:
+                    # If we just entered a black run, mark its start
+                    if col == 0 or not (np.sum(image[:, col - 1]) < 255):
+                        black_run_start = col
 
-        # If the image ends with a content block, capture it.
+                    # If the black run is wide enough, it's a gap
+                    if (col - black_run_start + 1) >= config.MIN_GAP_WIDTH:
+                        end_col = black_run_start
+                        if end_col - start_col >= config.DIGIT_MIN_WIDTH:
+                            content_images.append(image[:, start_col:end_col])
+                        in_content = False
+                # If column is not black, we are in content, nothing to do
+            else: # Not in content
+                if not is_column_black:
+                    # We found the start of a new digit
+                    in_content = True
+                    start_col = col
+
+        # If the image ends while in content, capture the last digit
         if in_content:
             if w - start_col >= config.DIGIT_MIN_WIDTH:
                 content_images.append(image[:, start_col:w])
