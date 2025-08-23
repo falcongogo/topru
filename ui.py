@@ -170,7 +170,7 @@ def render_image_upload_section() -> Dict[str, int]:
                         cols = st.columns(len(valid_digits))
                         for i, digit_img in enumerate(valid_digits):
                             with cols[i]:
-                                st.image(digit_img, use_column_width='always')
+                                st.image(digit_img, use_container_width=True)
 
 
     return st.session_state.get('scores', {})
