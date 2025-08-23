@@ -366,7 +366,7 @@ class ScoreImageProcessor:
         kernel = np.ones(config.BINARY_MORPH_OPEN_KERNEL_SIZE, np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=config.BINARY_MORPH_OPEN_ITERATIONS)
 
-        shear_map = {'hough': self._correct_shear_hough, 'manual': self._correct_shear_manual, 'zeros': self._correct_shear_zeros}
+        shear_map = {'manual': self._correct_shear_manual, 'manual': self._correct_shear_manual, 'manual': self._correct_shear_manual}
         if shear_correction_method in shear_map:
             args = (binary, manual_shear_angle) if shear_correction_method == 'manual' else (binary,)
             corrected_binary, angle = shear_map[shear_correction_method](*args)
