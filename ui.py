@@ -153,6 +153,26 @@ def render_image_upload_section() -> Dict[str, int]:
                                 x_offset += im.size[0]
                             st.image(concatenated_image, caption=f"{player} 切り出し後", use_container_width=True)
 
+                if 'split_digits_by_player' in debug_bundle and debug_bundle['split_digits_by_player']:
+                    st.markdown("##### 5. 黒い列での分割結果（デバッグ用）")
+                    for player, digits in debug_bundle['split_digits_by_player'].items():
+                        st.write(f"**{player}**")
+                        if not digits:
+                            st.write("（この領域の分割に失敗）")
+                            continue
+
+                        valid_digits = [d for d in digits if d is not None and d.size > 0]
+                        if not valid_digits:
+                            st.write("（有効な文字部分なし）")
+                            continue
+
+                        # To display images inline, we can use columns
+                        cols = st.columns(len(valid_digits))
+                        for i, digit_img in enumerate(valid_digits):
+                            with cols[i]:
+                                st.image(digit_img, use_column_width='always')
+
+
     return st.session_state.get('scores', {})
 
 def render_score_inputs() -> Dict[str, int]:
