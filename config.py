@@ -1,8 +1,8 @@
 import numpy as np
 
 # --- App Settings ---
-PLAYERS = ['自分', '下家', '対面', '上家']
-DEFAULT_SCORES = {'自分': 28000, '下家': 35000, '対面': 30000, '上家': 27000}
+PLAYERS = ['自家', '下家', '対面', '上家']
+DEFAULT_SCORES = {'自家': 28000, '下家': 35000, '対面': 30000, '上家': 27000}
 TOP_DIFF_COLOR_THRESHOLDS = {
     'red': 10000,
     'orange': 5000,

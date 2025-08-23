@@ -268,7 +268,7 @@ class ScoreImageProcessor:
         x1_split, x2_split = int(w * config.SCREEN_X1_SPLIT_RATIO), int(w * config.SCREEN_X2_SPLIT_RATIO)
         left_img, middle_img, right_img = screen_image[:, 0:x1_split], screen_image[:, x1_split:x2_split], screen_image[:, x2_split:w]
         mid_h = middle_img.shape[0] // 2
-        return {'上家': left_img, '対面': middle_img[0:mid_h, :], '自分': middle_img[mid_h:, :], '下家': right_img}
+        return {'上家': left_img, '対面': middle_img[0:mid_h, :], '自家': middle_img[mid_h:, :], '下家': right_img}
     
     def _is_valid_score(self, score: int) -> bool:
         return self.min_score <= score <= self.max_score and len(str(score)) == self.expected_digits
